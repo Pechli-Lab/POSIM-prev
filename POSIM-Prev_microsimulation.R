@@ -13,26 +13,18 @@ p_load_gh("DARTH-git/dampack")
 #install_github("DARTH-git/darthtools", force = TRUE)
 p_load_gh("DARTH-git/darthtools")
 
-setwd("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc") #for 6404 use 
-#setwd("~/GitHub/Cancer-prevalence-microsim/R/hpc") #for alex's sickkids laptop (6698) or 4199
+###setwd("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc")
 
 ## -----------------------------------------------------------------------------------------------------------------------------
 source("Functions.R") #microsim functions
 source("hmd_function.R") #HMD function
 source("trans prob function.R") #transition probability calculation
 
-
 ## -----------------------------------------------------------------------------------------------------------------------------
 
 #MSM results for patients diagnosed 1970-1989
 load("m_t_70to89.Rdata") # MSM matrix
 
-# Cure models able to be selected (Nov2022 results)
-# l_MSM_est_70to89 <- readRDS("l_MSM_est_70to89.rds") #model estimates
-# norm.mat.all_70to89 <- readRDS("norm.mat.all_70to89.rds") #uncertainty, nsim = 100
-# MSM_knots_70to89    <- read.csv("df_model_knots_70to89.csv") #knot locations for models that required it
-
-# No cure models able to be selected, spline knots updated (Feb2023 results)
 l_MSM_est_70to89 <- readRDS("l_MSM_est_70to89_nocure.rds") #model estimates
 norm.mat.all_70to89 <- readRDS("norm.mat.all_70to89_nocure.rds") #uncertainty, nsim = 100
 MSM_knots_70to89    <- read.csv("df_model_knots_70to89_nocure.csv") #knot locations for models that required it
@@ -44,15 +36,6 @@ MSM_knots_70to89$ICCC_regroup[MSM_knots_70to89$ICCC_regroup =="Non-Hodgkin lymph
 #MSM results for patients diagnosed 1990-2019
 load("m_t.Rdata") # MSM matrix
 
-#original results - used cure models
-# l_MSM_est    <- readRDS("l_MSM_est.rds") #model estimates
-# norm.mat.all <- readRDS("norm.mat.all.rds") #uncertainty, nsim = 100
-# MSM_knots    <- read.csv("df_model_knots.csv") #knot locations for models that required it
-# names(MSM_knots)[1] <- "ICCC_regroup"
-# MSM_knots$transition <- factor(MSM_knots$transition, levels = unique(MSM_knots$transition))
-# MSM_knots$ICCC_regroup[MSM_knots$ICCC_regroup =="Non-Hodgkin lymphomas and other lymphomas\n"] = "Non-Hodgkin lymphomas and other lymphomas"
-
-# No cure models able to be selected, spline knots updated (March2023 results)
 l_MSM_est    <- readRDS("l_MSM_est_90to19_nocure.rds") #model estimates
 norm.mat.all <- readRDS("norm.mat.all_90to19_nocure.rds") #uncertainty, nsim = 100
 MSM_knots    <- read.csv("df_model_knots_90to19_nocure.csv") #knot locations for models that required it
@@ -63,13 +46,11 @@ MSM_knots$ICCC_regroup[MSM_knots$ICCC_regroup =="Non-Hodgkin lymphomas and other
 
 ## -----------------------------------------------------------------------------------------------------------------------------
 
-batchno <- c(12:12)
+batchno <- c(1:12)
 for (b in batchno) {
 
 print(paste("Starting batch =", b)) #print which batch has started running
   
-#b <- 12  # batch
-# write.csv(b, paste0("/home/alanyang/batch",b,"rawdataoutput/batchnumber.csv"),row.names = F)
 set.seed(b)
 
 n_sim <- 9
@@ -86,8 +67,6 @@ StatCan_start_year <- 1971      # StatCan data starts at 1971, not 1970
 StatCan_end_year <- 2020
 
 init_year <- 1970               # starting year for the microsimulation model
-# init_year_sens <- 1950        # unhide if starting model earlier than 1970
-# init_year <- init_year_sens   # unhide if starting model earlier than 1970
 
 start_year_pred <- 2020         # starting year for predictions (births, population, incident cases, etc.)
 max_year  <- 2040               # end year
@@ -95,8 +74,7 @@ max_age   <- 100                # Max age for the cohort to be followed
 max_dx_age <- 14                # Max age at cancer diagnosis
 v_years   <- init_year:max_year # the years that the model will allow people to be born.
 
-n_t       <- max_year - init_year #removed -1 to have sim run until 2040 instead of 2039
-#n_t       <- max_year - init_year  - 1    # number of total cycles for the model
+n_t       <- max_year - init_year
 
 ICCCgroups <- c("ALL", "AML and other leukemias", "Astrocytoma", "Bone tumours", "Germ cell tumours", "Hepatic tumours", "Hodgkin lymphomas", "Neuroblastoma", "Non-Hodgkin lymphomas and other lymphomas", "Other CNS neoplasms", "Other epithelial and unspecified neoplasms", "Renal tumours", "Retinoblastoma", "Soft tissue sarcomas") #in alphabetical order - used in ICES survival models
 
@@ -117,8 +95,6 @@ survstatus_group2 <- c("0-1 years", "2 years", "3 years", "4 years", "5+ years")
 
 ## -----------------------------------------------------------------------------------------------------------------------------
 
-#mort_con  <- hmd.mx2(country, "petros.pechlivanoglou@sickkids.ca","DARTH", Ontario = T)
-# saveRDS(mort_con, file = "mort_con_backup.Rds")
 mort_con <- readRDS("mort_con_backup.Rds")
 small  <- extract.years(mort_con, years <- c(init_year:max_year))
 small  <- extract.ages(small, 0:max_age, FALSE)
@@ -156,8 +132,6 @@ df_mort$year_current <- as.numeric(df_mort$year_current)
 df_mort$year_current <- rep(init_year:max_year, each = length(unique(df_mort$age_current)), times = length(unique(df_mort$sexMale)))
 df_mort$age_current  <- as.numeric(df_mort$age_current)
 
-#Warning in lca(small, series = "female", interpolate = T, max.age = max_age) : Replacing zero values with estimat
-
 
 # Load cancer incidence rates
 
@@ -170,7 +144,7 @@ predrates <- predrates %>%
   dplyr::rename(cancer_type = group, year = P, age = A) %>%
   dplyr::filter(year >= init_year)
 
-ocr_pogo_years <- init_year:max_year #predicted years for incidence rates in GAM models with OCR/POGO/ICES data
+ocr_pogo_years <- init_year:max_year #incidence rate projections from generalized additive modeling
 
 combinations <-length(ICCCgroups)*length(ocr_pogo_years)*length(unique(predrates$age))
 predrates$sex <- rep(0:1, each = combinations)
@@ -182,11 +156,13 @@ y <- c(predrates$cancer_type) #here cancer type variable is fixed to remove _Fem
 y2 <- unlist(strsplit(y, split = "_"))
 predrates$cancer_type <- y2[seq(1,length(y)*2, by=2)]
 
-predrates$cancer_type <- as.factor(predrates$cancer_type) #prints in alphabetical order, which was used in the surv. models but ICCC groups were ordered by their roman numerals for ICES incidence analyses.
+predrates$cancer_type <- as.factor(predrates$cancer_type) #prints cancer types in alphabetical order, which was used in the surv. models but ICCC groups were ordered by their roman numerals for ICES incidence analyses.
 ICCCgroups_incidence <- c("ALL", "AML and other leukemias", "Hodgkin lymphomas", "Non-Hodgkin lymphomas and other lymphomas", "Astrocytoma", "Other CNS neoplasms", "Neuroblastoma", "Retinoblastoma", "Renal tumours", "Hepatic tumours", "Bone tumours", "Soft tissue sarcomas", "Germ cell tumours", "Other epithelial and unspecified neoplasms")
 predrates$cancer_type <- factor(predrates$cancer_type, levels = unique(ICCCgroups_incidence))
 
 ## -----------------------------------------------------------------------------------------------------------------------------
+
+#Relative risk of late mortality in childhood cancer survivors - from Yeh et al.
 
 Yeh <- read.csv("Yeh_JAMA2020_eTable5.csv")
 colnames(Yeh)[1] <- "Cohort"
@@ -253,9 +229,7 @@ for (k in 1:n_sim){
 }
 
 ## -----------------------------------------------------------------------------------------------------------------------------
-# HMD_pop_all <- readCHMDweb(provID = "ont", item = "Population", fixup = TRUE)
 
-# write.csv(HMD_pop_all, "../Population prediction/HMD_pop_backup.csv", row.names=FALSE)
 HMD_pop_all <- read.csv("HMD_pop_backup.csv")
 
 HMD_pop <- HMD_pop_all %>%
@@ -343,7 +317,7 @@ popON <- dplyr::union(popON, HMD_pop_100over)
 popON <- subset(popON, !is.na(Pop))
 
 ## -----------------------------------------------------------------------------------------------------------------------------
-ON.sim_demog <- readRDS("ON.sim_demog.Rds") #load population projection by sex and single year of age from poppred.Rmd file
+ON.sim_demog <- readRDS("ON.sim_demog.Rds") #load population projections by sex and single year of age (from stochastic population forecasting with coherent)
 
 adj_fac_m <- matrix(NA, nrow = n_sim, ncol = 2)
 
@@ -371,7 +345,7 @@ survstatus_df <- matrix(NA, nrow = length(survstatus_group)*(length(c(start_year
 survstatus_df2 <- matrix(NA, nrow = length(survstatus_group2)*(length(c(start_year_pred,max_year))), ncol = n_sim) #prevalence by FU in 1 yr periods until 5 yrs for 2020, 2040
 survstatus_ICCC_m <- matrix(NA, nrow = length(survstatus_group)*length(ICCCgroups)*(length(c(start_year_pred,max_year))), ncol = n_sim) #prevalence by FU in 5yr periods and cancer type for 2020 and 2040
 survstatus2_ICCC_m <- matrix(NA, nrow = length(survstatus_group2)*length(ICCCgroups)*(length(c(start_year_pred,max_year))), ncol = n_sim) #prevalence by FU in 1yr periods until 5yrs and cancer type for 2020 and 2040
-surv_kk <- matrix(NA,nrow = sum_decade_time, ncol = n_sim) #survival curve by decade of diagnosis
+surv_kk <- matrix(NA,nrow = sum_decade_time, ncol = n_sim) #survival curve by decade of diagnosis, all cancer types combined
 surv_kk_ALL <- matrix(NA,nrow = sum_decade_time, ncol = n_sim)
 surv_kk_AML <- matrix(NA,nrow = sum_decade_time, ncol = n_sim)
 surv_kk_NHL <- matrix(NA,nrow = sum_decade_time, ncol = n_sim)
@@ -388,9 +362,6 @@ surv_kk_GERM <- matrix(NA,nrow = sum_decade_time, ncol = n_sim)
 surv_kk_OTHER <- matrix(NA,nrow = sum_decade_time, ncol = n_sim)
 childpop_PSA <- matrix(NA, nrow = length(init_year:max_year), ncol = n_sim)
 prevpop_PSA <- matrix(NA, nrow = length(init_year:max_year), ncol = n_sim)
-attainedage_CCR_df_m <- matrix(NA, nrow = length(attainedage_group)*(length(c(start_year_pred,max_year))), ncol = n_sim) # approximating Ontario/CCR prevalence by attained age for 2015/2018
-CCR_ICCC_counts <- matrix(NA, nrow = length(init_year:max_year)*length(ICCCgroups), ncol = n_sim) #1992-2017 CCR prevalence comparison by cancer type
-CCRprev <- matrix(NA, nrow = length(init_year:max_year), ncol = n_sim) #1992-2017 CCR prevalence all cancers combined (get prev estimate for 2018 and project forward for the grant)
 
 
 ## -----------------------------------------------------------------------------------------------------------------------------
@@ -774,7 +745,6 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
   adj_fac_m[1] <- sum(v_n_popsim_male$pop)/sum(v_n_popsim_male$sim_pop) #save the specific adj_fac needed for each iteration
   adj_fac_m[2] <- n_i #save the specific n_i used for each iteration
   
-  # df_X <- df_X %>% mutate(`I(log(dxyear))` = NA) #unhide if using log(dxyear) model
   
   ## 05. Initialize dynamic characteristics
   
@@ -808,7 +778,6 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
     p_NCC2  <- p_NCC[, "p_NCC"]
     p_NCC2[is.na(p_NCC2)] = 0
     p_CD <- p_CCRE <- p_CRED <- c()
-    #if (t==2)browser()
     v_Cancer_new <- M_t =="C" & df_X0$v_dx0 == 1
     
     #if(sum(df_X0$v_dx0 == 1)>0)browser()
@@ -818,7 +787,6 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
     
     df_X0[v_Cancer_new,"ICCCgroup"] <- samplev(rates_iccc)
     
-    # if(t==22) browser()
     
     ######### calculate transition probabilities for NCD, CCRE, CRED, CD using msm results##########
     
@@ -833,20 +801,18 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
         df_X_trans <- df_X0[M_t == "C",]
         
       }
-      #if(t==42) View(df_X_trans)
+     
       transition <- which(m_t == trans)
       v_n_surv <- c("Diagnosis", "CRE", "Death")  
       s.from <- transition %% length(v_n_surv)    
       s.to   <- ceiling(transition/length(v_n_surv))
       
       
-      #if(t==43)browser()
-      
       # loops over ICCCgoups
       for(j in seq_along(ICCCgroups)){
         # pulling individuals within the Jth group 
         X_j <- df_X_trans[df_X_trans$ICCCgroup == ICCCgroups[j],]
-        #if(t==42)View(X_j)
+      
         
         # If someone is in the group then
         if(nrow(X_j) > 0){
@@ -869,10 +835,7 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
           X_temp[,"dxyear"] =  X_temp[,"dxyear"] - 1989 #unhide if using original MSM results (dxyear,age,sex)
           X_temp[,"age"] =  X_temp[,"age"] - 1 #needed to capture 0-14 instead of 1-15
           
-          #print(paste(trans,j, sep ="-"))
-          #  if(t==45 & trans ==2 & j == 9) browser()
-          
-          #if(sum(X_j$v_t == 2 & df_X_trans$ICCCgroup == "Other CNS neoplasms") > 0)browser()
+        
           p.trans[df_X_trans$ICCCgroup == ICCCgroups[j]] <- try(t(model.dist.f(dist.v = l_MSM_est_j[[trans]]$model[[1]], # model distribution
                                                                                d.data = norm.mat_j[[trans]][kk,],  # multivariate normal estimates
                                                                                dat.x  = X_temp, # matrix of baseline covariates
@@ -882,7 +845,6 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
                                                                                n_i_j = n_i_j, 
                                                                                j = j,
                                                                                MSM_knots = MSM_knots)),silent = T)
-          #if(t == 2) browser()
           
           ######## specifications for patients diagnosed before 1990 ########
           
@@ -901,8 +863,6 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
             X_temp_70to89[,"dxyear"] =  X_temp_70to89[,"dxyear"] - 1969 #original MSM results analyzed patients diagnosed 1990-2019 (covariates: dxyear,age,sex)
             X_temp_70to89[,"age"] =  X_temp_70to89[,"age"] - 1 #needed to capture 0-14 instead of 1-15
             
-            # X_temp[,"dxyear"] =  X_temp[,"dxyear"] + 20  #dxyear is already transformed in this matrix. Add back 20 so that 1970 = 1, etc. (1990 = 21, 1991 = 22, etc.)
-            # n_i_j_70to89 <- nrow(X_j[X_j$dxyear < 1990,])
             
             n_i_j_70to89 <- nrow(X_j_70to89)
             
@@ -965,8 +925,7 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
     p_NCC <- p_NCC2[M_t == "noC" & age_at_risk] #prob of cancer diagnosis if children in nocancer state
     p_NCD_C  <- p_NCD2[M_t == "C"] #background mortality risk for those in cancer state 
     p_NCD_CRE  <- p_NCD2[M_t == "CRE"] #background mortality risk for those in CRE state
-    
-    #if(t==16) browser()
+
     
     # update m_p_t with the appropriate probabilities (all non-death probabilities are conditional on survival)
     m_p_t["tobeborn",   M_t == "noC" & age_at_risk ] <- 0 # tobeborn
@@ -1020,7 +979,7 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
     
     # open a loop for time running cycles 1 to n_t
     for (t in 1:n_t) {
-      #if(t==4) browser()
+   
       # define which people to allocate through the Probs function and whom manually, "by hand"
       tobeallocated <- m_M[,t] %chin% toAllocate
       
@@ -1029,16 +988,13 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
       
       
       ##################################################################################
-      #if(t==15)browser()
+ 
       # calculate the transition probabilities for the cycle based on health state t
       P_all <- Probs(v_Allocate, df_X0 = df_X_Allocate, t, kk)
       m_P <- P_all$mpt
-      #print(m_P)
-      #if (t==47){print ((rowSums(m_P)*1000000));View(df_X_Allocate); View(df_X_Allocate[rowSums(m_P)!=1,]); View(m_P);View(v_Allocate)}
-      # check if transition probabilities are between 0 and 1
-      #check_transition_probability(m_P, verbose = TRUE)
-      # check if each of the rows of the transition probabilities matrix sum to one
+
       check_sum_of_transition_array(m_P, n_states = sum(tobeallocated), n_t = n_t, verbose = TRUE)
+      
       # sample the current health state and store that state in matrix m_M
       m_M[tobeallocated == T, t + 1]  <- samplev(m_P) # sample next year's state for those that need to be allocated    
       m_M[tobeallocated == F, t + 1]  <- m_M[tobeallocated == F, t ]    
@@ -1091,10 +1047,10 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
       
       # assign age at death to those who die in the next cycle
       df_X$age_death[df_X$v_death0 == 1 & m_M[, t + 1] == "dead" | df_X$v_death0 == 1 & m_M[, t + 1] == "candead"] = df_X$age_current[df_X$v_death0 == 1 & m_M[, t + 1] == "dead" | df_X$v_death0 == 1 & m_M[, t + 1] == "candead"] + 1
-      # assign year of death
+     
+       # assign year of death
       df_X$year_death[df_X$v_death0 == 1] = df_X$year_current[df_X$v_death0 == 1]
       
-      # if (t == 3) browser()
       #Assigning adults an annual risk of NCD to exit into the death state
       # if (t >= 1){
       # age_adult <- data.frame(table(df_X$age_current[m_M[, t + 1] == "adult"], df_X$sexMale[m_M[, t + 1] == "adult"]))
@@ -1109,10 +1065,6 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
       
       #################################
       #Remove emigrants - females
-      # length_emm_old <- 0
-      # age_emm_remove <- vector("numeric")
-      
-      # if(t==6)browser()
       
       emm_year_f <- popON_net_f_remove[popON_net_f_remove$year == (init_year + t),] #females only, emigrants to remove, by age, per year
       emm_year_f <- emm_year_f[emm_year_f$age < 99,]
