@@ -1146,14 +1146,9 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
   outcomes$df_X$age_death[is.na(outcomes$df_X$age_death)] <- 9999
   outcomes$df_X$year_imm[is.na(outcomes$df_X$year_imm)] <- 1900
   
-  # if (k == 1){
-  #   saveRDS(outcomes, paste0("outcomes", "_", k, ".rds"))
-  # }
-  
-  # saveRDS(outcomes, paste0("results", "_", k, ".rds"))
+
   print(paste("PSA iteration", k)) #print which PSA iteration has finished running
   
-  # fwrite(adj_fac_m, "adj_fac_m.csv", row.names=FALSE)
   
   ######### ######### ######### ######### ######### ######### 
   ######### Generate results from each iteration #########
@@ -1162,7 +1157,6 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
   adj_fac <- adj_fac_m[1]
   
   #1970-2040 prevalence counts  (all cancers combined)
-  # prev_sim[,k] <- colSums(outcomes$m_M == "C" | outcomes$m_M == "CRE")*adj_fac
   prev_sim <- colSums(outcomes$m_M == "C" | outcomes$m_M == "CRE")*adj_fac
   
   #1970-2040 prevalence rates  (all cancers combined)
@@ -1859,46 +1853,6 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
   
   attainedage <- attainedage + attainedage2$age2 - 1 #need the minus 1 to account for individuals starting with age 0 not being reflected in the attainedage matrix
   
-  #############
-  
-  attainedage_group_T1FF <- c("0-17", "18-29", "30-39", "40+")
-  emptydf_prev <- data.frame(attainedage = rep(attainedage_group_T1FF))
-  
-  age <- attainedage[,(length(v_years) - 18)] #2022 is col 53
-  table <-  table(age)
-  table <- data.table(table)
-  table$age <- as.numeric(table$age)
-  table <- table %>% mutate(attainedage = case_when(age <= 17 ~ "0-17",
-                                                    age >= 18 & age <= 29 ~ "18-29",
-                                                    age >= 30 & age <= 39 ~ "30-39",
-                                                    age >= 40 ~ "40+"))
-  table <- table %>% group_by(attainedage) %>% dplyr::summarise(n = sum(N))
-  table$n <- round(table$n*adj_fac)
-  table <- left_join(emptydf_prev, table, by = c("attainedage"))
-  table$year <- rep(2022)
-  table[is.na(table)] <- 0
-  table <- data.table(table)
-  table2022 <- table
-  
-  age <- attainedage[,(length(v_years) - 28)] #2012 is col 43
-  table <-  table(age)
-  table <- data.table(table)
-  table$age <- as.numeric(table$age)
-  table <- table %>% mutate(attainedage = case_when(age <= 17 ~ "0-17",
-                                                    age >= 18 & age <= 29 ~ "18-29",
-                                                    age >= 30 & age <= 39 ~ "30-39",
-                                                    age >= 40 ~ "40+"))
-  table <- table %>% group_by(attainedage) %>% dplyr::summarise(n = sum(N))
-  table$n <- round(table$n*adj_fac)
-  table <- left_join(emptydf_prev, table, by = c("attainedage"))
-  table$year <- rep(2012)
-  table[is.na(table)] <- 0
-  table <- data.table(table)
-  table2012 <- table
-  
-  attainedage_CCR_df <- rbind(table2022, table2012)
-  attainedage_CCR_df_m <- attainedage_CCR_df$n
-  
   
   ######
   
@@ -1944,10 +1898,7 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
     surv_kk_BONE             = surv_kk_BONE,
     surv_kk_SAR              = surv_kk_SAR,
     surv_kk_GERM             = surv_kk_GERM,
-    surv_kk_OTHER            = surv_kk_OTHER,
-    attainedage_CCR_df_m     = attainedage_CCR_df_m,
-    CCR_ICCC_counts          = CCR_ICCC_counts,
-    CCRprev                  = CCRprev)
+    surv_kk_OTHER            = surv_kk_OTHER)
   )
 
 } #end of the simulation loop
@@ -1996,9 +1947,6 @@ for (k in 1:n_sim) {
   surv_kk_SAR[,k]              <- sim_results_iter$surv_kk_SAR
   surv_kk_GERM[,k]             <- sim_results_iter$surv_kk_GERM
   surv_kk_OTHER[,k]            <- sim_results_iter$surv_kk_OTHER
-  attainedage_CCR_df_m[,k]     <- sim_results_iter$attainedage_CCR_df_m
-  CCR_ICCC_counts[,k]          <- sim_results_iter$CCR_ICCC_counts
-  CCRprev[,k]                  <- sim_results_iter$CCRprev
 }
 
 ## -----------------------------------------------------------------------------------------------------------------------------
@@ -2006,51 +1954,7 @@ for (k in 1:n_sim) {
 #Save locally
 print(paste("Ready to save batch =", b)) #print which batch has finished running
 
-# write.csv(prev_sim, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_kk.csv"), row.names = F)
-# write.csv(prev_rate, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_rate_kk.csv"), row.names = F)
-# write.csv(prevpop_PSA, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prevpop_PSA_kk.csv"), row.names = F)
-# write.csv(prev_imm, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_imm_kk.csv"), row.names = F)
-# write.csv(prev_bornON, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_bornON_kk.csv"), row.names = F)
-# write.csv(prev_imm_dxON, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_imm_dxON_kk.csv"), row.names = F)
-# write.csv(prev_sim_true_prev, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_true_prev_kk.csv"), row.names = F)
-# write.csv(prev_sim_true_prev_70, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_true_prev_70_kk.csv"), row.names = F)
-# write.csv(prev_sim_true_prev_ICCC, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_true_prev_ICCC_kk.csv"), row.names = F)
-# write.csv(prev_sim_true_prev_70_ICCC, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_true_prev_70_ICCC_kk.csv"), row.names = F)
-# write.csv(prev_sim_ICCC, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_ICCC_kk.csv"), row.names = F)
-# write.csv(prev_rate_ICCC, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_rate_ICCC_kk.csv"), row.names = F)
-# write.csv(childpop_PSA, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/childpop_PSA_kk.csv"), row.names = F)
-# write.csv(dxyear_sim_imm, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyear_sim_imm_kk.csv"), row.names = F)
-# write.csv(dxyear_sim_imm_rate, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyear_sim_imm_rate_kk.csv"), row.names = F)
-# write.csv(dxyear_sim_imm5_df, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyear_sim_imm5_df_kk.csv"), row.names = F)
-# write.csv(dxyear_sim_imm5_rate_df, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyear_sim_imm5_rate_df_kk.csv"), row.names = F)
-# write.csv(dxyeargroup_sim, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyeargroup_sim_kk.csv"), row.names = F)
-# write.csv(dxyeargroup_iccc_df, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyeargroup_iccc_df_kk.csv"), row.names = F)
-# write.csv(dxyeargroup_iccc_rate_df, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyeargroup_iccc_rate_df_kk.csv"), row.names = F)
-# write.csv(attainedage_year_df_m, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/attainedage_year_df_m_kk.csv"), row.names = F)
-# write.csv(attainedage_ICCC_m, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/attainedage_ICCC_m_kk.csv"), row.names = F)
-# write.csv(survstatus_df, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/survstatus_df_kk.csv"), row.names = F)
-# write.csv(survstatus_df2, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/survstatus_df2_kk.csv"), row.names = F)
-# write.csv(survstatus_ICCC_m, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/survstatus_ICCC_m_kk.csv"), row.names = F)
-# write.csv(survstatus2_ICCC_m, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/survstatus2_ICCC_m_kk.csv"), row.names = F)
-# write.csv(surv_kk, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_kk.csv"), row.names = F)
-# write.csv(surv_kk_ALL, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_ALL_kk.csv"), row.names = F)
-# write.csv(surv_kk_AML, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_AML_kk.csv"), row.names = F)
-# write.csv(surv_kk_NHL, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_NHL_kk.csv"), row.names = F)
-# write.csv(surv_kk_HL, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_HL_kk.csv"), row.names = F)
-# write.csv(surv_kk_AST, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_AST_kk.csv"), row.names = F)
-# write.csv(surv_kk_OCNS, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_OCNS_kk.csv"), row.names = F)
-# write.csv(surv_kk_NEU, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_NEU_kk.csv"), row.names = F)
-# write.csv(surv_kk_RET, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_RET_kk.csv"), row.names = F)
-# write.csv(surv_kk_REN, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_REN_kk.csv"), row.names = F)
-# write.csv(surv_kk_HEP, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_HEP_kk.csv"), row.names = F)
-# write.csv(surv_kk_BONE, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_BONE_kk.csv"), row.names = F)
-# write.csv(surv_kk_SAR, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_SAR_kk.csv"), row.names = F)
-# write.csv(surv_kk_GERM, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_GERM_kk.csv"), row.names = F)
-# write.csv(surv_kk_OTHER, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_OTHER_kk.csv"), row.names = F)
-# #write.csv(CCR_ICCC_counts, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/CCR_ICCC_counts_kk.csv"), row.names = F)
-# #write.csv(CCRprev, paste0("~/GitHub/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/CCRprev_kk.csv"), row.names = F)
-
-##file pathway if using 6404
+##Save on the high-performance computer (#6404)
 write.csv(prev_sim, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_kk.csv"), row.names = F)
 write.csv(prev_rate, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_rate_kk.csv"), row.names = F)
 write.csv(prevpop_PSA, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prevpop_PSA_kk.csv"), row.names = F)
@@ -2100,10 +2004,3 @@ write.csv(attainedage_CCR_df_m, paste0("C:/Users/amoskalewicz/Desktop/Cancer-pre
 } #end batch loop here
 
 ## -----------------------------------------------------------------------------------------------------------------------------
-
-#500/9 - need 55.5 runs of 9 sims to get to 500 runs. Create up to 56 folders
-
-# batch <- c(13:56)
-# for (b in batch){
-#   folder<-dir.create(paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/","batch",b,"rawdataoutput"))
-# }
