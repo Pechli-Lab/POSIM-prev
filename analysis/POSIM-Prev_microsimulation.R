@@ -13,32 +13,31 @@ p_load_gh("DARTH-git/dampack")
 #install_github("DARTH-git/darthtools", force = TRUE)
 p_load_gh("DARTH-git/darthtools")
 
-###setwd("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc")
+setwd("~/GitHub/POSIM-prev")
 
 ## -----------------------------------------------------------------------------------------------------------------------------
-source("Functions.R") #microsim functions
-source("hmd_function.R") #HMD function
-source("trans prob function.R") #transition probability calculation
+source("R/Functions.R") #microsim functions
+source("R/trans prob function.R") #transition probability calculation
 
 ## -----------------------------------------------------------------------------------------------------------------------------
 
-#MSM results for patients diagnosed 1970-1989
-load("m_t_70to89.Rdata") # MSM matrix
+#multi-state survival model (MSM) results for patients diagnosed 1970-1989
+load("data/m_t_70to89.Rdata") # MSM matrix
 
-l_MSM_est_70to89 <- readRDS("l_MSM_est_70to89_nocure.rds") #model estimates
-norm.mat.all_70to89 <- readRDS("norm.mat.all_70to89_nocure.rds") #uncertainty, nsim = 100
-MSM_knots_70to89    <- read.csv("df_model_knots_70to89_nocure.csv") #knot locations for models that required it
+l_MSM_est_70to89 <- readRDS("data/l_MSM_est_70to89_nocure.rds") #model estimates
+norm.mat.all_70to89 <- readRDS("data/norm.mat.all_70to89_nocure.rds") #uncertainty with multivariate normal dist., nsim = 100
+MSM_knots_70to89    <- read.csv("data/df_model_knots_70to89_nocure.csv") #knot locations for models that required it
 
 MSM_knots_70to89 <- MSM_knots_70to89 %>% select(transition, knots, ICCC_regroup)
 MSM_knots_70to89$transition <- factor(MSM_knots_70to89$transition, levels = unique(MSM_knots_70to89$transition))
 MSM_knots_70to89$ICCC_regroup[MSM_knots_70to89$ICCC_regroup =="Non-Hodgkin lymphomas and other lymphomas\n"] = "Non-Hodgkin lymphomas and other lymphomas"
 
 #MSM results for patients diagnosed 1990-2019
-load("m_t.Rdata") # MSM matrix
+load("data/m_t.Rdata") # MSM matrix
 
-l_MSM_est    <- readRDS("l_MSM_est_90to19_nocure.rds") #model estimates
-norm.mat.all <- readRDS("norm.mat.all_90to19_nocure.rds") #uncertainty, nsim = 100
-MSM_knots    <- read.csv("df_model_knots_90to19_nocure.csv") #knot locations for models that required it
+l_MSM_est    <- readRDS("data/l_MSM_est_90to19_nocure.rds") #model estimates
+norm.mat.all <- readRDS("data/norm.mat.all_90to19_nocure.rds") #uncertainty, nsim = 100
+MSM_knots    <- read.csv("data/df_model_knots_90to19_nocure.csv") #knot locations for models that required it
 MSM_knots <- MSM_knots %>% select(transition, knots, ICCC_regroup)
 MSM_knots$transition <- factor(MSM_knots$transition, levels = unique(MSM_knots$transition))
 MSM_knots$ICCC_regroup[MSM_knots$ICCC_regroup =="Non-Hodgkin lymphomas and other lymphomas\n"] = "Non-Hodgkin lymphomas and other lymphomas"
@@ -46,7 +45,7 @@ MSM_knots$ICCC_regroup[MSM_knots$ICCC_regroup =="Non-Hodgkin lymphomas and other
 
 ## -----------------------------------------------------------------------------------------------------------------------------
 
-batchno <- c(1:12)
+batchno <- c(1:12) #500 iterations of this model were run. Due to computational demand, these iterations were split up into different batches.
 for (b in batchno) {
 
 print(paste("Starting batch =", b)) #print which batch has started running
@@ -56,14 +55,19 @@ set.seed(b)
 n_sim <- 9
 
 # Model structure
-v_n        <- c("tobeborn", "noC", "C", "CRE", "adult",  "dead", "candead")  # vector with state names
+v_n        <- c("tobeborn", "noC", "C", "CRE", "adult",  "dead", "candead")  # vector with state names. 
+#tobeborn = individuals modeled in the background (living 'out of province', that may be randomly selected to enter the model in a future cycle)
+#noC = no cancer diagnosed in childhood
+#C = cancer diagnosed in childhood
+#CRE = cancer-related event
+#adult = adult (age >=15) without cancer
+#dead = all-cause mortality death (based on rates from general population of Ontario)
+#candead = death after childhood cancer diagnosis (based on MSM results)
 
 n_states   <- length(v_n)     # number of states
 n_i_init   <- 5000000         # number of individuals
 
-country   <- "CAN"    # country to extract HMD data for
-con.name  <- "Canada"
-StatCan_start_year <- 1971      # StatCan data starts at 1971, not 1970
+StatCan_start_year <- 1971      # StatCan data starts at 1971
 StatCan_end_year <- 2020
 
 init_year <- 1970               # starting year for the microsimulation model
@@ -95,7 +99,7 @@ survstatus_group2 <- c("0-1 years", "2 years", "3 years", "4 years", "5+ years")
 
 ## -----------------------------------------------------------------------------------------------------------------------------
 
-mort_con <- readRDS("mort_con_backup.Rds")
+mort_con <- readRDS("data/mort_con_backup.Rds")
 small  <- extract.years(mort_con, years <- c(init_year:max_year))
 small  <- extract.ages(small, 0:max_age, FALSE)
 
@@ -133,11 +137,11 @@ df_mort$year_current <- rep(init_year:max_year, each = length(unique(df_mort$age
 df_mort$age_current  <- as.numeric(df_mort$age_current)
 
 
-# Load cancer incidence rates
+# Load cancer incidence rate projections, from generalized additive modeling 
 
 ## ---- include=FALSE-----------------------------------------------------------------------------------------------------------
 
-predrates <- read.csv("predrates_forexport_50to40_Mar922.csv")
+predrates <- read.csv("data/GAM_incidence_results.csv")
 
 predrates <- predrates %>%
   select(!X) %>%
@@ -162,7 +166,7 @@ predrates$cancer_type <- factor(predrates$cancer_type, levels = unique(ICCCgroup
 
 ## -----------------------------------------------------------------------------------------------------------------------------
 
-#Relative risk of late mortality in childhood cancer survivors - from Yeh et al.
+#Relative risk of late mortality in childhood cancer survivors - from Yeh et al., PMID: 31895405
 
 Yeh <- read.csv("Yeh_JAMA2020_eTable5.csv")
 colnames(Yeh)[1] <- "Cohort"
@@ -230,7 +234,9 @@ for (k in 1:n_sim){
 
 ## -----------------------------------------------------------------------------------------------------------------------------
 
-HMD_pop_all <- read.csv("HMD_pop_backup.csv")
+#Pop estimates for Ontario, Canada
+
+HMD_pop_all <- read.csv("data/HMD_pop_backup.csv")
 
 HMD_pop <- HMD_pop_all %>%
   dplyr:::filter(Year >= init_year & Year < StatCan_start_year) %>%
@@ -284,8 +290,8 @@ HMD_pop_f_90to100 <- HMD_pop_all %>%
 HMD_pop_90to100 <- rbind(HMD_pop_m_90to100, HMD_pop_f_90to100)
 HMD_pop_100over <- rbind(HMD_pop_100over_m, HMD_pop_100over_f)
 
-### StatCan
-popON <- read.csv("pop_ON_Oct2021.csv") #Pop estimates for each year on JULY 1st (*StatCan captures period from July 1 to June 30.)
+### Population estimates for Ontario, Canada from Statistics Canada
+popON <- read.csv("data/pop_ON_Oct2021.csv") #Pop estimates for each year on JULY 1st (*StatCan captures period from July 1 to June 30.)
 colnames(popON)[1] <- "REF_DATE"
 
 #change pop data from representing pop on July 1st to Jan 1st
@@ -317,7 +323,7 @@ popON <- dplyr::union(popON, HMD_pop_100over)
 popON <- subset(popON, !is.na(Pop))
 
 ## -----------------------------------------------------------------------------------------------------------------------------
-ON.sim_demog <- readRDS("ON.sim_demog.Rds") #load population projections by sex and single year of age (from stochastic population forecasting with coherent)
+ON.sim_demog <- readRDS("data/ON.sim_demog.Rds") #load population projections by sex and single year of age (from stochastic population forecasting with coherent components)
 
 adj_fac_m <- matrix(NA, nrow = n_sim, ncol = 2)
 
@@ -627,7 +633,7 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
   #contains 0-100 pop for 1970, age 0 (new births cohorts) for 1971-2040, and immigrants 1-100 for 1971-2040
   v_n_popsim_female <- popON_net %>%
     # dplyr::filter(sex == "female" & year > init_year & age == 0 & pop > 0)
-    dplyr::filter(sex == "female" & year > init_year & pop > 0 & age < max_age) #odd high net pop of 100 year olds is occurring? remove for now
+    dplyr::filter(sex == "female" & year > init_year & pop > 0 & age < max_age)
   v_n_popsim_female <- rbind((popON_init_year%>%filter(sex == "female")), v_n_popsim_female)
   v_n_popsim_female <- v_n_popsim_female %>% mutate(age_inityear = (year - year_birth - (year - init_year)))
   v_n_popsim_female$year_entry <- ifelse(v_n_popsim_female$age_inityear < 0, v_n_popsim_female$year_birth, init_year)
@@ -728,7 +734,7 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
                       year_entry = v_year_entry, #year they enter the model
                       age_current = v_age_sim, #age at the current microsim cycle
                       year_current = NA,
-                      year_imm = v_year_imm, #retain true year of immigration (Will become 1900 for Ontario residents)
+                      year_imm = v_year_imm, #retain true year of immigration (Will become arbitrary value of 1900 for those born in Ontario)
                       year_emm = NA,
                       age = NA, #age at cancer diagnosis
                       dxyear = NA, #year of cancer diagnosis
@@ -1068,7 +1074,7 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
       
       emm_year_f <- popON_net_f_remove[popON_net_f_remove$year == (init_year + t),] #females only, emigrants to remove, by age, per year
       emm_year_f <- emm_year_f[emm_year_f$age < 99,]
-      emm_ages <- c(emm_year_f$age) #grab only the ages for immigrants that need to be removed
+      emm_ages <- c(emm_year_f$age) #grab only the ages for those that need to be removed
       
       for (e in emm_ages){
         # df_X_age2 <- df_X$ID[(((init_year + t) - df_X$year_birth) == (e)) & df_X$sexMale == 0]
@@ -1710,27 +1716,7 @@ sim_results <- foreach (k = 1:n_sim) %dopar% {
   survtime <- data.frame(time = sum_decade$time, strata = sum_decade$strata, surv = sum_decade$surv)
   survtime <- left_join(template_surv, survtime, by = c("time", "strata"))
   surv_kk <- survtime$surv
-  
-  # ##### Loop approach
-  # #Overall survival - by cancer type
-  # groups  <- cancer_df_X %>% dplyr::count(ICCCgroup)
-  # survprobs_cancertype <- vector(mode  = "list", length = length(unique(cancer_df_X$ICCCgroup))) #create the list by cancer type
-  # names(survprobs_cancertype) <- c(groups$ICCCgroup)
-  # 
-  # for(i in 1:dim(groups)[1]){  #for each row of groups - filter data so that it matches groups, and save in 'df_tosave'
-  # 
-  # cancer_df_X_subset  <- filter(cancer_df_X, ICCCgroup == groups$ICCCgroup[i])
-  # 
-  # m1_decade_type <- survfit(Surv(t_cancer, dead)~ decade, data = cancer_df_X_subset)
-  # sum_decade_type <-summary(m1_decade_type, times = 0:n_t)
-  # survtime_type <- data.frame(time = sum_decade_type$time, strata = sum_decade_type$strata, surv = sum_decade_type$surv)
-  # survtime_type <- left_join(template_surv, survtime_type, by = c("time", "strata"))
-  # surv_kk_type <- survtime_type$surv
-  # 
-  # survprobs_cancertype[[i]] <- list(surv_kk_type)
-  # 
-  # }
-  ##### 
+
   
   #Overall survival - ALL
   m1_decade_ALL <- survfit(Surv(t_cancer, dead)~ decade, data = cancer_df_X%>%filter(ICCCgroup == "ALL"))
@@ -1954,51 +1940,58 @@ for (k in 1:n_sim) {
 #Save locally
 print(paste("Ready to save batch =", b)) #print which batch has finished running
 
+parent_directory <- "~/GitHub/POSIM-prev/raw-output"
+  
+  folder_name <- paste0("batch", b, "rawdataoutput")
+  folder_path <- file.path(parent_directory, folder_name)
+  dir.create(folder_path, recursive = TRUE)
+
+
 ##Save on the high-performance computer (#6404)
-write.csv(prev_sim, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_kk.csv"), row.names = F)
-write.csv(prev_rate, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_rate_kk.csv"), row.names = F)
-write.csv(prevpop_PSA, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prevpop_PSA_kk.csv"), row.names = F)
-write.csv(prev_imm, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_imm_kk.csv"), row.names = F)
-write.csv(prev_bornON, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_bornON_kk.csv"), row.names = F)
-write.csv(prev_imm_dxON, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_imm_dxON_kk.csv"), row.names = F)
-write.csv(prev_sim_true_prev, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_true_prev_kk.csv"), row.names = F)
-write.csv(prev_sim_true_prev_70, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_true_prev_70_kk.csv"), row.names = F)
-write.csv(prev_sim_true_prev_ICCC, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_true_prev_ICCC_kk.csv"), row.names = F)
-write.csv(prev_sim_true_prev_70_ICCC, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_true_prev_70_ICCC_kk.csv"), row.names = F)
-write.csv(prev_sim_ICCC, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_sim_ICCC_kk.csv"), row.names = F)
-write.csv(prev_rate_ICCC, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/prev_rate_ICCC_kk.csv"), row.names = F)
-write.csv(childpop_PSA, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/childpop_PSA_kk.csv"), row.names = F)
-write.csv(dxyear_sim_imm, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyear_sim_imm_kk.csv"), row.names = F)
-write.csv(dxyear_sim_imm_rate, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyear_sim_imm_rate_kk.csv"), row.names = F)
-write.csv(dxyear_sim_imm5_df, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyear_sim_imm5_df_kk.csv"), row.names = F)
-write.csv(dxyear_sim_imm5_rate_df, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyear_sim_imm5_rate_df_kk.csv"), row.names = F)
-write.csv(dxyeargroup_sim, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyeargroup_sim_kk.csv"), row.names = F)
-write.csv(dxyeargroup_iccc_df, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyeargroup_iccc_df_kk.csv"), row.names = F)
-write.csv(dxyeargroup_iccc_rate_df, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/dxyeargroup_iccc_rate_df_kk.csv"), row.names = F)
-write.csv(attainedage_year_df_m, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/attainedage_year_df_m_kk.csv"), row.names = F)
-write.csv(attainedage_ICCC_m, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/attainedage_ICCC_m_kk.csv"), row.names = F)
-write.csv(survstatus_df, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/survstatus_df_kk.csv"), row.names = F)
-write.csv(survstatus_df2, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/survstatus_df2_kk.csv"), row.names = F)
-write.csv(survstatus_ICCC_m, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/survstatus_ICCC_m_kk.csv"), row.names = F)
-write.csv(survstatus2_ICCC_m, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/survstatus2_ICCC_m_kk.csv"), row.names = F)
-write.csv(surv_kk, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_kk.csv"), row.names = F)
-write.csv(surv_kk_ALL, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_ALL_kk.csv"), row.names = F)
-write.csv(surv_kk_AML, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_AML_kk.csv"), row.names = F)
-write.csv(surv_kk_NHL, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_NHL_kk.csv"), row.names = F)
-write.csv(surv_kk_HL, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_HL_kk.csv"), row.names = F)
-write.csv(surv_kk_AST, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_AST_kk.csv"), row.names = F)
-write.csv(surv_kk_OCNS, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_OCNS_kk.csv"), row.names = F)
-write.csv(surv_kk_NEU, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_NEU_kk.csv"), row.names = F)
-write.csv(surv_kk_RET, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_RET_kk.csv"), row.names = F)
-write.csv(surv_kk_REN, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_REN_kk.csv"), row.names = F)
-write.csv(surv_kk_HEP, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_HEP_kk.csv"), row.names = F)
-write.csv(surv_kk_BONE, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_BONE_kk.csv"), row.names = F)
-write.csv(surv_kk_SAR, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_SAR_kk.csv"), row.names = F)
-write.csv(surv_kk_GERM, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_GERM_kk.csv"), row.names = F)
-write.csv(surv_kk_OTHER, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/surv_OTHER_kk.csv"), row.names = F)
-write.csv(CCR_ICCC_counts, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/CCR_ICCC_counts_kk.csv"), row.names = F)
-write.csv(CCRprev, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/CCRprev_kk.csv"), row.names = F)
-write.csv(attainedage_CCR_df_m, paste0("C:/Users/amoskalewicz/Desktop/Cancer-prevalence-microsim/R/hpc/6404 outputs/batch",b,"rawdataoutput/CIHRprev_age_kk.csv"), row.names = F)
+write.csv(prev_sim, paste0("raw-output/batch",b,"rawdataoutput/prev_sim_kk.csv"), row.names = F)
+write.csv(prev_rate, paste0("raw-output/batch",b,"rawdataoutput/prev_rate_kk.csv"), row.names = F)
+write.csv(prevpop_PSA, paste0("raw-output/batch",b,"rawdataoutput/prevpop_PSA_kk.csv"), row.names = F)
+write.csv(prev_imm, paste0("raw-output/batch",b,"rawdataoutput/prev_imm_kk.csv"), row.names = F)
+write.csv(prev_bornON, paste0("raw-output/batch",b,"rawdataoutput/prev_bornON_kk.csv"), row.names = F)
+write.csv(prev_imm_dxON, paste0("raw-output/batch",b,"rawdataoutput/prev_imm_dxON_kk.csv"), row.names = F)
+write.csv(prev_sim_true_prev, paste0("raw-output/batch",b,"rawdataoutput/prev_sim_true_prev_kk.csv"), row.names = F)
+write.csv(prev_sim_true_prev_70, paste0("raw-output/batch",b,"rawdataoutput/prev_sim_true_prev_70_kk.csv"), row.names = F)
+write.csv(prev_sim_true_prev_ICCC, paste0("raw-output/batch",b,"rawdataoutput/prev_sim_true_prev_ICCC_kk.csv"), row.names = F)
+write.csv(prev_sim_true_prev_70_ICCC, paste0("raw-output/batch",b,"rawdataoutput/prev_sim_true_prev_70_ICCC_kk.csv"), row.names = F)
+write.csv(prev_sim_ICCC, paste0("raw-output/batch",b,"rawdataoutput/prev_sim_ICCC_kk.csv"), row.names = F)
+write.csv(prev_rate_ICCC, paste0("raw-output/batch",b,"rawdataoutput/prev_rate_ICCC_kk.csv"), row.names = F)
+write.csv(childpop_PSA, paste0("raw-output/batch",b,"rawdataoutput/childpop_PSA_kk.csv"), row.names = F)
+write.csv(dxyear_sim_imm, paste0("raw-output/batch",b,"rawdataoutput/dxyear_sim_imm_kk.csv"), row.names = F)
+write.csv(dxyear_sim_imm_rate, paste0("raw-output/batch",b,"rawdataoutput/dxyear_sim_imm_rate_kk.csv"), row.names = F)
+write.csv(dxyear_sim_imm5_df, paste0("raw-output/batch",b,"rawdataoutput/dxyear_sim_imm5_df_kk.csv"), row.names = F)
+write.csv(dxyear_sim_imm5_rate_df, paste0("raw-output/batch",b,"rawdataoutput/dxyear_sim_imm5_rate_df_kk.csv"), row.names = F)
+write.csv(dxyeargroup_sim, paste0("raw-output/batch",b,"rawdataoutput/dxyeargroup_sim_kk.csv"), row.names = F)
+write.csv(dxyeargroup_iccc_df, paste0("raw-output/batch",b,"rawdataoutput/dxyeargroup_iccc_df_kk.csv"), row.names = F)
+write.csv(dxyeargroup_iccc_rate_df, paste0("raw-output/batch",b,"rawdataoutput/dxyeargroup_iccc_rate_df_kk.csv"), row.names = F)
+write.csv(attainedage_year_df_m, paste0("raw-output/batch",b,"rawdataoutput/attainedage_year_df_m_kk.csv"), row.names = F)
+write.csv(attainedage_ICCC_m, paste0("raw-output/batch",b,"rawdataoutput/attainedage_ICCC_m_kk.csv"), row.names = F)
+write.csv(survstatus_df, paste0("raw-output/batch",b,"rawdataoutput/survstatus_df_kk.csv"), row.names = F)
+write.csv(survstatus_df2, paste0("raw-output/batch",b,"rawdataoutput/survstatus_df2_kk.csv"), row.names = F)
+write.csv(survstatus_ICCC_m, paste0("raw-output/batch",b,"rawdataoutput/survstatus_ICCC_m_kk.csv"), row.names = F)
+write.csv(survstatus2_ICCC_m, paste0("raw-output/batch",b,"rawdataoutput/survstatus2_ICCC_m_kk.csv"), row.names = F)
+write.csv(surv_kk, paste0("raw-output/batch",b,"rawdataoutput/surv_kk.csv"), row.names = F)
+write.csv(surv_kk_ALL, paste0("raw-output/batch",b,"rawdataoutput/surv_ALL_kk.csv"), row.names = F)
+write.csv(surv_kk_AML, paste0("raw-output/batch",b,"rawdataoutput/surv_AML_kk.csv"), row.names = F)
+write.csv(surv_kk_NHL, paste0("raw-output/batch",b,"rawdataoutput/surv_NHL_kk.csv"), row.names = F)
+write.csv(surv_kk_HL, paste0("raw-output/batch",b,"rawdataoutput/surv_HL_kk.csv"), row.names = F)
+write.csv(surv_kk_AST, paste0("raw-output/batch",b,"rawdataoutput/surv_AST_kk.csv"), row.names = F)
+write.csv(surv_kk_OCNS, paste0("raw-output/batch",b,"rawdataoutput/surv_OCNS_kk.csv"), row.names = F)
+write.csv(surv_kk_NEU, paste0("raw-output/batch",b,"rawdataoutput/surv_NEU_kk.csv"), row.names = F)
+write.csv(surv_kk_RET, paste0("raw-output/batch",b,"rawdataoutput/surv_RET_kk.csv"), row.names = F)
+write.csv(surv_kk_REN, paste0("raw-output/batch",b,"rawdataoutput/surv_REN_kk.csv"), row.names = F)
+write.csv(surv_kk_HEP, paste0("raw-output/batch",b,"rawdataoutput/surv_HEP_kk.csv"), row.names = F)
+write.csv(surv_kk_BONE, paste0("raw-output/batch",b,"rawdataoutput/surv_BONE_kk.csv"), row.names = F)
+write.csv(surv_kk_SAR, paste0("raw-output/batch",b,"rawdataoutput/surv_SAR_kk.csv"), row.names = F)
+write.csv(surv_kk_GERM, paste0("raw-output/batch",b,"rawdataoutput/surv_GERM_kk.csv"), row.names = F)
+write.csv(surv_kk_OTHER, paste0("raw-output/batch",b,"rawdataoutput/surv_OTHER_kk.csv"), row.names = F)
+write.csv(CCR_ICCC_counts, paste0("raw-output/batch",b,"rawdataoutput/CCR_ICCC_counts_kk.csv"), row.names = F)
+write.csv(CCRprev, paste0("raw-output/batch",b,"rawdataoutput/CCRprev_kk.csv"), row.names = F)
+write.csv(attainedage_CCR_df_m, paste0("raw-output/batch",b,"rawdataoutput/CIHRprev_age_kk.csv"), row.names = F)
 
 
 } #end batch loop here
