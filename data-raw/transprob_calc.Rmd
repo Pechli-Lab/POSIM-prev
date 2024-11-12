@@ -1,0 +1,296 @@
+---
+title: "transprob calc"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+rm(list=ls())
+
+knitr::opts_chunk$set(echo = TRUE)
+
+if (!require('pacman')) install.packages('pacman'); library(pacman) 
+
+p_load("here", "devtools", "dplyr", "scales", "ellipse", "ggplot2", "lazyeval", "igraph", "truncnorm", "ggraph", "reshape2", "knitr", "markdown", "stringr", "demography", "readr", "data.table", "zoo", "flexsurv", "flexsurvcure", "diagram", "mstate")
+
+source('../Functions/model.rmvnorm.R')
+source('../Functions/trans prob function.R')
+
+ICCCgroups <- c("ALL", "AML and other leukemias", "Astrocytoma", "Bone tumours", "Germ cell tumours", "Hepatic tumours", "Hodgkin lymphomas", "Neuroblastoma", "Non-Hodgkin lymphomas and other lymphomas", "Other CNS neoplasms", "Other epithelial and unspecified neoplasms", "Renal tumours", "Retinoblastoma", "Soft tissue sarcomas")
+
+```
+
+
+########################################
+#######################################
+##### generating transition probabilities for patients diagnosed from 1990-2019 ##### 
+########################################
+#######################################
+
+```{r}
+
+# Transition matrix
+v_n_surv <- c("Cancer diagnosis", "Cancer-related event", "Death") # state names
+states <- length(v_n_surv)  # number of states 
+
+load("../data_msm/m_t.Rdata") # Model matrix
+
+#IMPORT AIC/BIC RESULTS FOR ALL MODELS
+df_all_AICBIC <- read.csv("../data_msm_90to19_nocure/df_all_AICBIC_combined.csv")
+
+# MSM Estimates ----
+
+MSM_est <- read.csv("../data_msm_90to19_nocure/l_selected_models_by_transition_est.csv")
+MSM_est <- MSM_est[c(-1, -2)]
+
+MSM_est$transition <- factor(MSM_est$transition, levels=unique(MSM_est$transition))
+
+transition <- c("model_Diagnosis_CRE", "model_Diagnosis_Death", "model_CRE_Death")
+v_transition_names <- as.data.frame(transition)
+
+
+#Retinoblastoma - Remove Spline model estimates and replace with LogNormal (second best)
+
+l_all_models_by_transition_est <- read.csv("../data_msm_90to19_nocure/l_all_models_by_transition_est.csv")
+MSM_est_RET <- l_all_models_by_transition_est %>% filter(ICCC_regroup == "Retinoblastoma" & transition == "model_Diagnosis_Death" & model == "LogNormal") %>% select(!X & !.id)
+ 
+MSM_est <- rbind(MSM_est, MSM_est_RET)
+MSM_est$manualselection <- ifelse(MSM_est$ICCC_regroup == "Retinoblastoma" & MSM_est$transition == "model_Diagnosis_Death" & MSM_est$model == "Spline", 1, 0)
+MSM_est <- MSM_est %>% subset(manualselection != 1) %>% select(!manualselection)
+
+
+# MSM Estimates ----
+l_MSM_est <- vector(mode  = "list", length = 14) #create the list by cancer type
+names(l_MSM_est) <- c(ICCCgroups)
+
+for(z in 1:length(l_MSM_est)){ #for all 14 cancer types
+  
+MSM_est1 <- list()
+
+for (i in 1:dim(v_transition_names)[1]){ #for all 3 transitions
+  
+  df <- MSM_est %>% dplyr::filter(transition == v_transition_names$transition[i] & ICCC_regroup == names(l_MSM_est[z]))
+  df <- subset(df, select = -ICCC_regroup)
+  
+ MSM_est1[[i]] <- df
+  
+}
+
+names(MSM_est1) <- transition
+
+l_MSM_est[[z]] <- MSM_est1
+}
+
+
+# MSM Covariance Matrices ----
+
+#Use cov_selected_manual folder with LogNormal dist. for Retinoblastoma instead of Spline.
+
+event.path1 <- "../data_msm_90to19_nocure/cov_selected_manual/"
+  
+v_n_surv <- c("Diagnosis", "CRE", "Death")
+
+MSM_cov0 <- vector(mode   = "list", length = 14)
+names(MSM_cov0) <- c(ICCCgroups)
+
+for(z in 1:length(MSM_cov0)){
+  
+MSM_cov1 <- list()
+
+for (i in 1:sum(!is.na(m_t))){    # for each transition number
+  transition <- which(m_t == i)   # get transition index in m_t
+  s.from <- transition %% length(v_n_surv)     # from state = row of the transition matrix, or remainder when divided by # states 
+  s.to <- ceiling(transition/length(v_n_surv)) # to state = column of the transition matrix, or rounded up division by # states
+  # assign tryCatch value to x: reads in CSV if it's not empty and takes cov matrix, otherwise takes value of NA 
+  x <- tryCatch({
+    read.csv(paste0(event.path1, "cov_selected_", names(MSM_cov0[z]), ".", "model_", v_n_surv[s.from], "_", v_n_surv[s.to], ".csv"), skip = 0)
+  },
+  error = function(e){
+    NA}
+  )
+  x <- as.data.frame(x)
+  MSM_cov1[[i]] <- x
+  names(MSM_cov1)[i] <- paste0("model_", v_n_surv[s.from], "_", v_n_surv[s.to])
+}
+  MSM_cov0[[z]] <- MSM_cov1
+  
+}
+
+# Spline Knot Locations
+
+MSM_knots <- read.csv("../data_msm_90to19_nocure/df_model_knots.csv")
+
+MSM_knots <- MSM_knots %>% select(transition, knots, ICCC_regroup)
+MSM_knots$transition <- factor(MSM_knots$transition, levels = unique(MSM_knots$transition))
+MSM_knots$ICCC_regroup[MSM_knots$ICCC_regroup =="Non-Hodgkin lymphomas and other lymphomas\n"] = "Non-Hodgkin lymphomas and other lymphomas"
+
+# Add Uncertainty to event coefficients ---- model.rmvnorm.f function
+
+n_sim = 100
+
+norm.mat.all <- vector(mode  = "list", length = 14)
+names(norm.mat.all) <- c(ICCCgroups)
+
+for (j in seq_along(ICCCgroups)){
+  
+norm.mat <- list()
+for (i in 1:sum(!is.na(m_t))){    # for each transition number
+  transition <- which(m_t == i)   # get transition index in m_t
+  s.from <- transition %% length(v_n_surv)     # from state = row of the transition matrix, or remainder when divided by # states 
+  s.to <- ceiling(transition/length(v_n_surv)) # to state = column of the transition matrix, or rounded up division by # states
+ #assign(paste0(v_n_surv[s.from], "_", v_n_surv[s.to], "_" , ICCCgroups[j], ".norm.mat"), 
+    norm.mat[[i]] <- model.rmvnorm.f(l_MSM_est[[j]][[i]], MSM_cov0[[j]], index = i, n_sim = n_sim)
+  }
+ #get(paste0(v_n_surv[s.from], "_", v_n_surv[s.to], "_" , ICCCgroups[j], ".norm.mat"))
+
+ names(norm.mat) <- v_transition_names$transition
+norm.mat.all[[j]] <- norm.mat
+}
+
+#save for use in microsimulation model. (transition probabilities are calculated at each cycle, informed by the objects below)
+saveRDS(l_MSM_est, "l_MSM_est_90to19_nocure.rds")
+saveRDS(MSM_cov0, "MSM_cov0_90to19_nocure.rds")
+saveRDS(norm.mat.all, "norm.mat.all_90to19_nocure.rds")
+
+```
+
+
+########################################
+#######################################
+##### generating transition probabilities for patients diagnosed from 1970-1989 #####
+########################################
+#######################################
+
+```{r}
+
+v_n_surv <- c("Cancer diagnosis", "Death") # state names. Note: information on subsequent cancer events (e.g., relapse, second cancer) was not available in the cancer registry for patients diagnosed prior to 1990. Thus, only the transition from childhood cancer diagnosis to death is considered for this group.
+
+states <- length(v_n_surv)  # number of states 
+
+load("../data_msm_70to89_nocure/m_t_70to89.Rdata") # Model matrix
+m_t <- m_t_70to89
+
+#IMPORT AIC/BIC RESULTS
+
+# df_all_AICBIC <- read.csv("../data_msm_70to89_nocure/df_all_AICBIC.csv") #(covariates dxyear, age, sex)
+df_all_models_best <- read.csv("../data_msm_70to89_nocure/df_all_models_best.csv") #(covariates dxyear, age, sex) #calculated within ICES
+
+# MSM Estimates
+
+MSM_est <- read.csv("../data_msm_70to89_nocure/l_selected_models_by_transition_est.csv")
+MSM_est <- MSM_est %>% select(!'.id')
+
+MSM_est$transition <- factor(MSM_est$transition, levels=unique(MSM_est$transition))
+MSM_est <- MSM_est %>% filter(transition == "model_Diagnosis_Death")
+
+transition <- c("model_Diagnosis_Death")
+v_transition_names <- as.data.frame(transition)
+
+l_MSM_est <- vector(mode  = "list", length = 14) #create the list by cancer type
+names(l_MSM_est) <- c(ICCCgroups)
+
+for(z in 1:length(l_MSM_est)){ #for all 14 cancer types
+  
+MSM_est1 <- list()
+
+for (i in 1:dim(v_transition_names)[1]){ #for all 3 transitions
+  
+  df <- MSM_est %>% dplyr::filter(transition == v_transition_names$transition[i] & ICCC_regroup == names(l_MSM_est[z]))
+  df <- subset(df, select = -ICCC_regroup)
+  
+ MSM_est1[[i]] <- df
+  
+}
+
+names(MSM_est1) <- transition
+
+l_MSM_est[[z]] <- MSM_est1
+}
+
+
+# MSM Covariance Matrices ----
+event.path1 <- "../data_msm_70to89_nocure/cov_selected/"
+  
+v_n_surv <- c("Diagnosis", "Death")
+
+MSM_cov0 <- vector(mode   = "list", length = 14)
+names(MSM_cov0) <- c(ICCCgroups)
+
+for(z in 1:length(MSM_cov0)){
+  
+MSM_cov1 <- list()
+
+for (i in 1:sum(!is.na(m_t))){    # for each transition number
+  transition <- which(m_t == i)   # get transition index in m_t
+  s.from <- transition %% length(v_n_surv)     # from state = row of the transition matrix, or remainder when divided by # states 
+  s.to <- ceiling(transition/length(v_n_surv)) # to state = column of the transition matrix, or rounded up division by # states
+  # assign tryCatch value to x: reads in CSV if it's not empty and takes cov matrix, otherwise takes value of NA 
+  x <- tryCatch({
+     read.csv(paste0(event.path1, "cov_selected_", names(MSM_cov0[z]), ".", "model_", v_n_surv[s.from], "_", v_n_surv[s.to], ".csv"), skip = 0)
+  },
+  error = function(e){
+    NA}
+  )
+  x <- as.data.frame(x)
+  MSM_cov1[[i]] <- x
+  names(MSM_cov1)[i] <- paste0("model_", v_n_surv[s.from], "_", v_n_surv[s.to])
+}
+  MSM_cov0[[z]] <- MSM_cov1
+  
+}
+
+# Spline Knot Locations
+
+MSM_knots <- read.csv("../data_msm_70to89_nocure/df_model_knots_70to89_nocure.csv")
+MSM_knots$transition <- factor(MSM_knots$transition, levels = unique(MSM_knots$transition))
+
+MSM_knots <- MSM_knots %>% filter(transition == "model_Diagnosis_Death")
+
+l_MSM_knots <- vector(mode  = "list", length = 14) #create the list by cancer type
+names(l_MSM_knots) <- c(ICCCgroups)
+
+for(z in 1:length(l_MSM_knots)){ #for all 14 cancer types
+  
+MSM_knots1 <- list()
+
+for (i in 1:dim(v_transition_names)[1]){ #for all 3 transitions
+  
+  df <- MSM_knots %>% dplyr::filter(transition == v_transition_names$transition[i] & ICCC_regroup == names(l_MSM_knots[z]))
+  
+ MSM_knots1[[i]] <- df
+  
+l_MSM_knots[[z]] <- MSM_knots1
+  
+}
+}
+
+# Add Uncertainty to event coefficients ---- model.rmvnorm.f function
+
+n_sim = 100
+
+norm.mat.all <- vector(mode  = "list", length = 14)
+names(norm.mat.all) <- c(ICCCgroups)
+
+for (j in seq_along(ICCCgroups)){
+  
+norm.mat <- list()
+for (i in 1:sum(!is.na(m_t))){    # for each transition number
+  transition <- which(m_t == i)   # get transition index in m_t
+  s.from <- transition %% length(v_n_surv)     # from state = row of the transition matrix, or remainder when divided by # states 
+  s.to <- ceiling(transition/length(v_n_surv)) # to state = column of the transition matrix, or rounded up division by # states
+ #assign(paste0(v_n_surv[s.from], "_", v_n_surv[s.to], "_" , ICCCgroups[j], ".norm.mat"), 
+    norm.mat[[i]] <- model.rmvnorm.f(l_MSM_est[[j]][[i]], MSM_cov0[[j]], index = i, n_sim = n_sim)
+  }
+ #get(paste0(v_n_surv[s.from], "_", v_n_surv[s.to], "_" , ICCCgroups[j], ".norm.mat"))
+
+ names(norm.mat) <- v_transition_names$transition
+norm.mat.all[[j]] <- norm.mat
+}
+
+#save for use in microsimulation model (transition probabilities are calculated at each cycle, informed by the objects below)
+saveRDS(l_MSM_est, "l_MSM_est_70to89_nocure.rds")
+saveRDS(MSM_cov0, "MSM_cov0_70to89_nocure.rds")
+saveRDS(norm.mat.all, "norm.mat.all_70to89_nocure.rds")
+
+
+```

@@ -1,0 +1,235 @@
+
+# Predict future population of Ontario
+
+# Use of the demography package in R for stochastic population forecasting with coherent components. Based on the papers by Hyndman and Booth (IJF 2008), Hyndman, Booth and Yasmeen (Demography 2013), and the tutorial linked here: https://robjhyndman.com/hyndsight/coherent-population-forecasting/
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+options(scipen=999)
+```
+
+# Load packages 
+
+```{r}
+
+if (!require('pacman')) install.packages('pacman'); library(pacman)
+p_load("HMDHFDplus", "demography", "dplyr", "tidyr", "ggplot2", "reshape2", "readr", "forecast", "zoo", "data.table", "ggpubr")
+
+```
+
+# Load population data
+
+Population data for Ontario is loaded, which contains annual population estimates by age and sex for the years 1971 to 2020 for ages 0-100 and over. "The population growth, which is used to calculate population estimates, is comprised of the natural growth (Tables 17100006 and 17100016), international migration (Table 17100014) and interprovincial migration (Table 17100015)." - StatCan.
+
+```{r }
+popON <- read.csv("../../Data/Demography data/pop_ON_Oct2021.csv")
+colnames(popON)[1] <- "REF_DATE"
+popON_f <- popON %>% filter(Sex == "Females") %>% select(!Sex) %>% dplyr::rename(Year = REF_DATE, Female = VALUE, Age = Age.group)
+popON_f$Age <- as.numeric(ifelse(substr(popON_f$Age,3,3) =="y", substr(popON_f$Age,1,2),substr(popON_f$Age,1,3)))
+
+popON_m <- popON %>% filter(Sex == "Males") %>% select(!Sex) %>% dplyr::rename(Year = REF_DATE, Male = VALUE, Age = Age.group)
+popON_m$Age <- as.numeric(ifelse(substr(popON_m$Age,3,3) =="y", substr(popON_m$Age,1,2),substr(popON_m$Age,1,3)))
+
+pop <- inner_join(popON_m,popON_f,by =c("Year","Age")) %>% arrange(Year, Age) %>% filter(Year <= 2020) #remove data past 2020
+
+#reshape pop data
+pop_m <- reshape2::dcast(data = pop, Age ~ Year, value.var ="Male" )[,-1]
+pop_f <- reshape2::dcast(data = pop, Age ~ Year, value.var ="Female" )[,-1]
+
+```
+
+# Load Ontario fertility data
+
+StatCan provincial age-specific fertility rates are loaded (fert), available by 5-year age groups between ages 15 and 49 for the years 1991 to 2020. Age-specific fertility rate (ASFR) is the number of live births per 1,000 females in a specific age group
+
+```{r }
+fert <- read.csv("../../Data/Demography data/fert_ON_Oct2021.csv") #StatCan dataset
+colnames(fert) <- c("Age", 1991:2020)
+fert <- fert %>% select(!'2020')
+
+#pop_fert combines the annual population of females by 5-year age groups (e.g. 15-19, 20-24, 25-29...) to correspond with ages deemed fertile (15-49).
+pop_fert <- rbind(colSums(pop_f[16:20,]), #ages 15-19
+              colSums(pop_f[21:25,]), #ages 20-24
+              colSums(pop_f[26:30,]), #ages 25-29, etc.
+              colSums(pop_f[31:35,]),
+              colSums(pop_f[36:40,]),
+              colSums(pop_f[41:45,]),
+              colSums(pop_f[46:50,])) #age 45-49
+
+pop_fert <- pop_fert[,as.character(1991:2019)]
+```
+
+# Load mortality data
+
+Provincial annual estimates of deaths, by age and sex, are loaded for years 1971/1972 to 2020/2021 (period of July 1 to June 30). Rows correspond to age 0, 1, 2, etc. up to 99, and 100 and over.
+
+Data for persons aged 90 to 100 years and over is available from 2001/2002.
+```{r }
+mort <- read.csv("../../Data/Demography data/mort_ON_Oct2021_new.csv")
+
+colnames(mort)<- c("Sex","Age",1971:2020)
+#colnames(mort)<- c("Sex","Age",1972:2021) #as the years are written as 1971/1972 to 2020/2021 this should be specified as 1972-2021?
+mort$Age <- rep(0:100, times = 2) #repeat each age for 2 sexes
+mort <- mort %>% select(!'2020') #remove 2020 column
+
+mort_m <- mort %>% filter(Sex == "Males") %>% select(!c(Sex, Age))
+mort_m <- sapply(mort_m, as.numeric)
+
+mort_f <- mort %>% filter(Sex == "Females") %>% select(!c(Sex, Age))
+mort_f <- sapply(mort_f, as.numeric)
+
+```
+
+#Creating demogdata objects for mortality, population and fertility + calculate net migration from mortality and fertility data using demography package
+
+Demogdata function creates demogdata object suitable for plotting using plot.demogdata and fitting a LC or BMS model.
+
+demography::netmigration calculates net migration from mortality and fertility data. It computes the net number of migrants in each year based on population numbers, deaths and births.
+
+```{r }
+
+dim(mort_m) #101 49
+dim(pop_m) #101 50
+
+#Mortality
+mort.ON_m <- demogdata(data = mort_m[-ncol(pop_m)]/pop_m[-ncol(pop_m)], pop = pop_m[-ncol(pop_m)], ages =0:100, years = 1971:2019, type ="mortality",label ="ONT" , name ="male")
+mort.ON_f <- demogdata(data = mort_f[-ncol(pop_m)]/pop_f[,-ncol(pop_m)],pop=pop_f[,-ncol(pop_m)], ages =0:100, years =1971:2019, type ="mortality",label ="ONT" , name ="female")
+
+mort.ON <- mort.ON_f
+mort.ON$pop$male <- mort.ON_m$pop$male
+mort.ON$rate$male <- mort.ON_m$rate$male
+
+#Population
+pop.ON_m <- demogdata(data = pop_m,pop=pop_m, ages =0:100,years = 1971:2020, type ="population",label ="ONT" , name ="male")
+pop.ON_f <- demogdata(data = pop_f,pop=pop_f, ages =0:100,years = 1971:2020, type ="population",label ="ONT" , name ="female")
+
+names(pop.ON_f$pop) = "female"
+names(pop.ON_m$pop) = "male"
+
+pop.ON <- pop.ON_f
+pop.ON$pop$male <- pop.ON_m$pop$male
+
+#Fertility (pulls fertility rates (fert) and population of fertile women (pop_fert))
+fer.ON_f <- demogdata(data = fert[,-1],pop = pop_fert,ages =seq(17,47,5), years = 1991:2019, type ="fertility",label ="ONT" , name ="female")
+
+migrON_demog <- netmigration(mort = extract.years(mort.ON,1991:2019),fert = extract.years(fer.ON_f, 1991:2019), mfratio = 1.05)
+#Note: net migration could only be calculated until 2018, given that 2020 data was not provided for the calculation to get net migration estimates for 2019.
+
+```
+
+# Plot
+
+Here population size, mortality and migration are plotted. 
+
+Smooth demogdata functions were created and models were fit for mortality, fertility, and migration. 
+
+Coherentfdm fits a coherent functional model to describe demographic data - coherent models are fit to prevent forecasts of the two sexes from diverging. Residuals were plotted to visually assess the data.
+
+```{r }
+
+##Plot all components:
+#Population
+plot(pop.ON,series = "male")
+plot(pop.ON,series = "female")
+
+#Mortality
+plot(mort.ON,series = "male")
+plot(mort.ON,series = "female")
+
+#Fertility
+plot(fer.ON_f)
+
+#Net migration
+plot(migrON_demog,series = "male")
+plot(migrON_demog,series = "female")
+
+#Extract years 2000-2019 for components
+#Using 2001 as start year as StatCan death counts are not avail. for ages 90-100 until 2001/2002
+mort.ON <- extract.years(mort.ON, 2001:2019)
+fer.ON_f <- extract.years(fer.ON_f, 2001:2019)
+migr.ON_demog <- extract.years(migrON_demog, 2001:2019)
+
+##Smooth all data using penalized regression splines:
+mort.ON.sm <- smooth.demogdata(mort.ON, obs.var="theoretical")
+fert.ON.sm <- smooth.demogdata(fer.ON_f, obs.var="theoretical")
+mig.ON.sm_demog <- smooth.demogdata(migr.ON_demog)
+
+##Fit functional data models. 'Coherent' models are fit to prevent forecasts of the two sexes from diverging (Hyndman et al., 2013)
+
+#Mortality
+mort.fit <- coherentfdm(mort.ON.sm)
+plot(residuals(mort.fit$product))
+plot(residuals(mort.fit$ratio$male))
+
+#Fertility
+fert.fit <- fdm(fert.ON.sm)
+plot(residuals(fert.fit))
+
+# Migration
+mig.fit_demog <- coherentfdm(mig.ON.sm_demog)
+plot(residuals(mig.fit_demog$product))
+plot(residuals(mig.fit_demog$ratio$male))
+
+```
+
+# Forecast 
+
+Fit forecasting models to the coefficients of each functional data model. Plots are produced in each case to check that results look reasonable.
+
+Mortality, fertility and migration were forecast from 2020 to 2045 (a total of 26 years). Grey lines represent our data, and colored is predictions from our model.
+
+```{r }
+
+# Mortality
+mortf <- forecast(mort.fit, h= 26, max.d=1)
+
+plot(mortf$product, 'c', comp=2)
+plot(mort.fit$product$y, col='gray', ylim=c(-11,-0.5),
+     main="Mortality forecasts product: 2020-2045")
+lines(mortf$product)
+
+plot(mortf$ratio$male, 'c', comp=2)
+plot(mort.fit$ratio$male$y,col='gray',
+     main="Mortality forecasts ratio (M/F): 2020-2045")
+lines(mortf$ratio$male)
+
+
+# Fertility
+fertf <- forecast(fert.fit, h= 26,max.d = 1)
+
+plot(extract.years(fertf, 2020:2040), main="Fertility rates for Ontario, 2001-2040", ylab = "Fertility rate", ylim = c(0,150))
+lines(fert.ON.sm, col = 'gray')
+
+# Migration
+migf_demog <- forecast(mig.fit_demog, h = 26, stationary = TRUE)
+
+plot(migf_demog$product, 'c', comp=2)
+plot(mig.fit_demog$product$y, col='gray',
+     main="Migration forecasts product: 2019-2044")
+lines(migf_demog$product)
+
+plot(migf_demog$ratio$male, 'c', comp=2)
+plot(mig.fit_demog$ratio$male$y, col='gray',
+     main="Migration forecasts ratio (M/F): 2019-2044")
+lines(migf_demog$ratio$male)
+
+```
+
+# Simulate future population
+
+pop.sim function simulates future sample paths of a population using functional models for mortality, fertility and migration.
+
+The object ON.sim is a list of two arrays of dimension 101 x 26 x N, one for males and one for females. The first dimension is age groups (0:100), the second dimension is the forecast horizon (2020:2045), while the third dimension gives simulated replicates.
+
+```{r }
+#Plot population with prediction intervals
+#Means and intervals:
+
+n_i =1000
+ON.sim_demog <- pop.sim(mortf, fertf, migf_demog, firstyearpop=extract.years(pop.ON,years = 2020), N=n_i)
+
+#saveRDS(ON.sim_demog, file = "ON.sim_demog.Rds")
+
+```
+

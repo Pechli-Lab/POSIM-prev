@@ -1,0 +1,549 @@
+---
+title: "MSM_all models_70to89"
+output: html_document
+---
+
+======================================================================
+
+# 2018 Institute for Clinical Evaluative Sciences. All rights reserved.
+
+# TERMS OF USE:
+
+##Not for distribution.## This code and data is provided to the user solely for its own non-commerical use by individuals and/or not-for-profit corporations. Users shall not distribute without express written permission from the Institute for Clinical Evaluative Sciences.
+
+##Not-for-profit.## This code and data may not be used in connection with profit generating activities.
+
+##No liability.## The Institute for Clinical Evaluative Sciences makes no warranty or representation regarding the fitness, quality or reliability of this code and data.
+
+##No Support.## The Institute for Clinical Evaluative Sciences will not provide any technological, educational or informational support in connection with the use of this code and data.
+
+##Warning.## By receiving this code and data, user accepts these terms, and uses the code and data, solely at its own risk.
+
+======================================================================
+
+---
+
+This file runs multi-state parametric survival models to examine survival after childhood cancer diagnosis.
+
+This coding process was applied to two separate cohorts: 1) children diagnosed with cancer between *1970-1989*, captured in the Ontario Cancer Registry (data held at ICES); and 2) children diagnosed with cancer between *1990-2019*, captured in the Pediatric Oncology Group of Ontario Networked Information System (data held at ICES).
+
+One line (line 104) requires manual selection, depending on the years of data available for analysis.
+
+# 01 Load packages
+
+```{r setup, include=FALSE}
+rm(list=ls())
+
+library(dplyr)
+library(flexsurv)
+library(flexsurvcure)
+library(survminer)
+library(ggplot2)
+library(msm)
+library(mstate)
+library(reshape2)
+library(knitr)
+library(abind)
+library(data.table)
+library(openxlsx)
+library(gridExtra)
+library(tidyr)
+library(lubridate)
+library(plyr)
+
+source('functions_msm.R')
+
+output_file_directory <- "REDACTED"
+
+```
+
+#Assign state info
+```{r}
+v_names_states1 <- c("Diagnosis", "CRE", "Death")
+n_states        <- length(v_names_states1)                        # number of states 
+
+n_t_yr   <- 101                                  # time horizon in years 
+c_l_yr   <- 1                                    # cycle length (annual)
+times_yr <- seq(from = 0, to = n_t_yr, by = c_l_yr) # sequence of cycle days to be considered in the model (annual)
+
+covariates <- c("sex", "age", "dxyear", "ICCC_regroup")
+
+v_n <- c("Diagnosis", "CRE", "Death")
+v_s <- c("Diagnosis_s", "CRE_s", "Death_s")
+
+m_t <- transMat(x = list(c(2,3),
+                         c(3),
+                         c()),
+                names = v_n)
+
+
+# Transition matrix
+
+m_P_diag <- matrix(NA, n_states, n_states, dimnames = list(v_names_states1, v_names_states1))
+m_P_diag["Diagnosis", "CRE"] <- 1
+m_P_diag["Diagnosis", "Death"] <- 2
+m_P_diag["CRE", "Death"] <- 3
+#layout.fig <- c(2, 1)
+#plotmat(t(m_P_diag), t(layout.fig), self.cex = 0.5, curve = 0, arr.pos = 0.76,  
+        #latex = T, arr.type = "curved", relsize = 0.85, box.prop = 0.8, 
+        #cex = 0.1, box.cex = 0.7, lwd = 1)
+```
+
+
+```{r}
+MSMdata <- read.csv("REDACTED")
+
+timedata <- MSMdata %>% select(Progression_time, Death_time)
+timedata$Progressionfree <- rep(0, times = nrow(timedata))
+timedata <- timedata %>% select(Progressionfree, Progression_time, Death_time) %>% dplyr::rename(Diagnosis = Progressionfree, CRE = Progression_time, Death = Death_time)
+
+status <- MSMdata %>% select(Progressionfree, Progression, Death) %>% dplyr::rename(Diagnosis_s = Progressionfree, CRE_s = Progression, Death_s = Death)
+
+MSMdata <- MSMdata %>% dplyr::rename(Diagnosis_s = Progressionfree, CRE_s = Progression, Death_s = Death, CRE = Progression_time, Death = Death_time, id = ID)
+
+MSMdata$dxyear <- MSMdata$dxyear - 1969 #This line was run when analyzing survival for patients diagnosed between 1970-1989 (Subtracting by 1 to have dxyear of 1970 == 1, 1971 == 2, ...). When analyzing survival for patients diagnosed between 1990-2019, MSMdata$dxyear - 1989 was applied.
+
+#Multistate Modeling (MSM)
+## Read in MSM datasets
+
+data_long_covar  <- msprep(time = timedata, status = status, trans = m_t, data = MSMdata, keep = covariates)
+
+v_cov <- c("sex", "age", "dxyear") #covariates assessed in survival models. age and dxyear were continuous variables.
+v_cov <- paste(v_cov, collapse = "+")
+v_cov <- noquote(v_cov)
+
+models <- c("Exponential", "Weibull", "Gamma", "LogNormal", "Gompertz", "LogLogistic", "Spline", "Exponential.c", "Weibull.c", "Gamma.c", "LogNormal.c", "Gompertz.c", "LogLogistic.c") #distributions to assess (.c is a mixture cure model)
+
+cov.lists <- c(rep(v_cov, 1),
+               rep(v_cov, 1),
+               rep(v_cov, 1))
+
+
+#create and store subsetted dataframes for MSM by cancer type
+ICCCgroups <- MSMdata %>% dplyr::count(ICCC_regroup)
+
+MSMdfs <- vector(mode = "list")
+for(i in 1:dim(ICCCgroups)[1]){
+  
+df <- filter(data_long_covar, ICCC_regroup == ICCCgroups$ICCC_regroup[i])
+
+MSMdfs[[i]] <- df
+
+names(MSMdfs)[i] <- paste0(ICCCgroups$ICCC_regroup[i])
+
+MSMdfs[[i]] <- as.data.frame(MSMdfs[[i]])
+
+}
+
+```
+
+
+```{r}
+model.list.results <- vector(mode = "list")
+
+for(i in 1:length(MSMdfs)){  
+
+#run all models for all transitions, store in model.list
+model.list <- fun.model.list(v_n = v_n,
+                             m_t = m_t,
+                             df = MSMdfs[[i]],
+                             cov.lists = cov.lists)
+
+fit.list <- fun.fit.list(m_t = m_t,
+                         model.list = model.list,
+                         models = models)
+
+model.list.results[[i]] <- list(model.list = model.list, fit.list = fit.list)
+
+}
+names(model.list.results) <- names(MSMdfs)
+
+```
+
+
+```{r}
+
+#Diagnosis to CRE transition
+fit_Dx_CRE_iccc <- vector(mode = "list")
+
+for(i in 1:length(MSMdfs)){
+
+fit_Dx_CRE_iccc_model <- state.model(data = subset(MSMdfs[[i]], to == "2" & from == "1"),
+                        covariates = v_cov,
+                        title = paste0("Diagnosis to CRE", ", ", names(MSMdfs)[i]))
+
+fit_Dx_CRE_iccc_model_export <- output.f(fit_Dx_CRE_iccc_model)
+fit_Dx_CRE_iccc_model_export_df <- ldply(fit_Dx_CRE_iccc_model_export, data.frame)
+fit_Dx_CRE_iccc[[i]] <- fit_Dx_CRE_iccc_model_export_df
+
+}
+names(fit_Dx_CRE_iccc) <- names(MSMdfs)
+
+#Diagnosis to Death transition
+fit_Dx_D_iccc <- vector(mode = "list")
+
+for(i in 1:length(MSMdfs)){  
+
+fit_Dx_D_iccc_model <- state.model(data = subset(MSMdfs[[i]], to == "3" & from == "1"),
+                        covariates = v_cov,
+                        title = paste0("Diagnosis to Death", ", ", names(MSMdfs)[i]))
+
+fit_Dx_D_iccc_model_export <- output.f(fit_Dx_D_iccc_model)
+fit_Dx_D_iccc_model_export_df <- ldply(fit_Dx_D_iccc_model_export, data.frame)
+fit_Dx_D_iccc[[i]] <- fit_Dx_D_iccc_model_export_df
+}
+names(fit_Dx_D_iccc) <- names(MSMdfs)
+
+
+#CRE to Death transition
+fit_CRE_D_iccc <- vector(mode = "list")
+
+for(i in 1:length(MSMdfs)){
+
+fit_CRE_D_iccc_model <- state.model(data = subset(MSMdfs[[i]], to == "3" & from == "2"),
+                        covariates = v_cov,
+                        title = paste0("CRE to Death", ", ", names(MSMdfs)[i]))
+
+fit_CRE_D_iccc_model_export <- output.f(fit_CRE_D_iccc_model)
+fit_CRE_D_iccc_model_export_df <- ldply(fit_CRE_D_iccc_model_export, data.frame)
+
+fit_CRE_D_iccc[[i]] <- fit_CRE_D_iccc_model_export_df
+}
+names(fit_CRE_D_iccc) <- names(MSMdfs)
+
+```
+
+## Extract model information and save as csv files
+### Save AIC and BIC for all models
+
+```{r}
+# Create a vector for all transition names   
+v_transition_names <- c("model_Diagnosis_CRE", "model_Diagnosis_Death", "model_CRE_Death")
+
+#### run models.AICBIC function for each cancer type
+df_all_AICBIC.results <- vector(mode = "list")
+
+for(i in 1:length(model.list.results)){  
+
+df_all_AICBIC <- models.AICBIC(models, v_transition_names, model.list.results[[i]][["fit.list"]])
+
+df_all_AICBIC.results[[i]] <- list(df_all_AICBIC = df_all_AICBIC)
+
+}
+names(df_all_AICBIC.results) <- names(model.list.results)
+
+# write AIC and BIC for all models to a csv
+df_all_AICBIC_combined <- ldply(df_all_AICBIC.results, data.frame)
+colnames(df_all_AICBIC_combined) <- c("ICCC_regroup", "transition", "model", "AIC", "BIC", "cov") 
+
+write.csv(df_all_AICBIC_combined, "df_all_AICBIC_combined.csv")
+
+```
+
+#Combine all dfAICBIC results to create summary file for export
+#Choose model with best estimated predictive ability from AIC/BIC values
+#Model must have converged and have a covariance matrix (cov == 1)
+```{r}
+df_all_models_best_aic <- df_all_AICBIC_combined %>% 
+  dplyr::select(-BIC) %>% 
+  filter(cov == 1) %>%  # remove rows with no cov matrix 
+  filter(!model %in% c("Exponential.c", "Weibull.c" , "Gamma.c","LogNormal.c","Gompertz.c", "LogLogistic.c")) %>% #remove results from mixture cure models
+  group_by(ICCC_regroup, transition) %>% 
+  na.omit(AIC) %>% 
+  dplyr::summarise(min_AIC   = min(AIC), model_AIC = model[AIC == min(AIC)])
+
+df_all_models_best_bic <- df_all_AICBIC_combined %>% 
+  dplyr::select(-AIC) %>%
+  filter(cov == 1) %>%                     # remove rows with no cov matrix
+  filter(!model %in% c("Exponential.c", "Weibull.c" , "Gamma.c","LogNormal.c","Gompertz.c", "LogLogistic.c")) %>% #remove results from mixture cure models
+  na.omit(BIC) %>% 
+  group_by(ICCC_regroup, transition) %>% 
+  dplyr::summarise(min_BIC   = min(BIC),
+            model_BIC = model[BIC == min(BIC)])
+
+df_all_models_best <- left_join(df_all_models_best_aic, df_all_models_best_bic) %>% 
+  mutate(same_model = ifelse(model_AIC == model_BIC, "TRUE", "FALSE"))
+
+#Write best AIC and BIC models for each transition to a csv
+
+write.csv(df_all_models_best, "df_all_models_best.csv")
+```
+
+###Extract estimates and covariance matrices from all models - by cancer type
+
+```{r}
+extract.results <- vector(mode = "list")
+
+for(h in 1:length(MSMdfs)){  
+
+model.list <- fun.model.list(v_n = v_n, #run model.list again
+                            m_t = m_t,
+                             df = MSMdfs[[h]],
+                             cov.lists = cov.lists)
+names(model.list) <- v_transition_names
+
+# Data frame with all the available models per transition
+df_models_by_transition <- df_all_AICBIC_combined %>% 
+  mutate(no_model = ifelse(!is.na(AIC) | !is.na(BIC), 1, 0)) %>%    # if AIC OR BIC isn't NA, no_model = 1
+  filter(no_model == 1 & ICCC_regroup == names(MSMdfs)[h]) %>%     # filter models that have AIC and/or BIC values
+  dplyr::select(transition, model)                                 # for models with AIC and BIC values, 
+
+l_model_by_transition <- vector(mode = "list", length = length(v_transition_names)) # to store available models for each transition
+names(l_model_by_transition) <- v_transition_names                                  # name each transition
+
+df_model_knots <- data.frame(transition = as.character(),
+                             knots = as.numeric())
+
+# Fill l_model_by_transition with loop to extract the available models for each transition
+for (j in 1:length(v_transition_names)) {              # for each transition
+  df_available_models <- df_models_by_transition %>%   
+    filter(transition == v_transition_names[j])        # extract available models  
+  
+  l_model_by_transition[[j]] <- df_available_models    # store in list 
+}
+
+# Creating 2 empty lists to store estimates and cov matrix 
+l_all_models_by_transition_est <- vector(mode   = "list", 
+                                         length = length(v_transition_names))
+
+l_all_models_by_transition_cov <- vector(mode   = "list",
+                                         length = length(v_transition_names))
+
+l_all_models_by_transition_knots <- vector(mode   = "list",
+                                         length = length(v_transition_names))
+# Name each element by transition
+names(l_all_models_by_transition_knots) <- names(l_all_models_by_transition_est) <- names(l_all_models_by_transition_cov) <- v_transition_names
+
+# Open transition loop
+for (transition in 1:length(model.list)){ 
+  
+  transition_name    <- names(model.list)[transition]             # Name of the transition
+  l_transition       <- model.list[[transition_name]]             # List of all models for transition 
+  v_available_models <- l_model_by_transition[[transition]]$model # Vector of available models for transition
+  
+  df_all_models_by_transition_est <- c()                          # empty dataframe to catch model estimates
+  l_all_models_cov <- vector(mode   = "list",                     # empty list to catch model variance covariance matrices
+                             length = length(v_available_models))
+  
+  names(l_all_models_cov) <- v_available_models                   # Name elements of list 
+  
+  model_knots <- data.frame(transition = transition_name,
+                            knots = model.list[[transition]]$knots)
+  names(model_knots) <- c("transition", "knots")
+  df_model_knots <- bind_rows(df_model_knots, model_knots)
+  
+  # Open available model loop (for each transition)
+  for (available_model in 1:ifelse(length(v_available_models)==0, 1, length(v_available_models))){ #ifelse catches if no available models
+    
+    available_model_name <- v_available_models[available_model]      # Name of the model
+    l_model              <- l_transition[[available_model_name]]     # Stores model
+    m_model_est          <- l_model[["res"]]                         # Results of the model
+    m_model_cov          <- l_model[["cov"]]                         # Var-Cov matrix of the model
+    
+    v_cov_names <- names(m_model_est[,1])                            # Names of parameters and covariates
+    if (is.null(v_cov_names)){v_cov_names <- NA}                     # if empty, NA
+    
+    m_model_est <- m_model_est[,1]                                   # Stores parameters and coefficients
+    if (is.null(m_model_est)){m_model_est <- NA}                     # if empty, NA
+    
+    # Get SE 
+    SE_trans <- c()
+    for (i in 1:length(m_model_est)){
+      SE_trans[i]<- ifelse(tryCatch({is.null(m_model_cov[i, i])}, 
+                      error = function(e){NA}), 
+                      NA,                        # if error (ex. incorrect # of dimensions) take NA 
+                      sqrt(m_model_cov[i, i]))   # otherwise take sqrt of value
+      
+    }
+    
+    # Calculate p-value
+    pvalue <- round(2*pnorm(-abs(m_model_est/SE_trans)), 3)
+    
+    # Create a data frame with the estimates of the model
+    df_model_est <- data.frame(transition   = transition_name,       # transition name
+                               model        = available_model_name,  # model name
+                               covariate    = v_cov_names,           # parameter and covariate names
+                               estimate     = m_model_est,           # parameter and covariate coefficient values
+                               SE           = SE_trans,              # SE
+                               pvalue       = pvalue,                # pvalue
+                               row.names    = NULL)                  # no row names
+    
+    df_all_models_by_transition_est   <- bind_rows(df_all_models_by_transition_est, df_model_est) # combines estimates for all models 
+    l_all_models_cov[available_model] <- list(m_model_cov)                                        # combines covariance matrices for all models 
+  } # end model loop
+  
+  l_all_models_by_transition_est[transition] <- list(df_all_models_by_transition_est)   # store estimates for all transitions
+  l_all_models_by_transition_cov[transition] <- list(l_all_models_cov)                  # store cov matrices for all transitions
+  l_all_models_by_transition_knots[transition] <- list(df_model_knots)
+  
+} # end transition loop
+
+ #### Extract estimates and covariance matrices from selected models
+ 
+# Data frame with the best model of each transition defined by AIC
+df_selected_models_best <- df_all_models_best %>%
+  filter(ICCC_regroup == names(MSMdfs)[h]) %>%
+  dplyr::select(transition, model = model_AIC)
+
+# Empty lists to hold selected models est and covs
+l_selected_models_by_transition_est <- vector(mode   = "list", 
+                                              length = length(v_transition_names))
+l_selected_models_by_transition_cov <- vector(mode   = "list", 
+                                              length = length(v_transition_names))
+
+# Name each element of the lists with the transition names
+names(l_selected_models_by_transition_est) <- v_transition_names
+names(l_selected_models_by_transition_cov) <- v_transition_names
+
+for (transition in 1:length(v_transition_names)) { 
+  
+  #Name of the transition
+  transition_name <- names(l_all_models_by_transition_est)[transition]
+  
+  #Name of the best model of the transition
+  best_model <- df_selected_models_best %>%
+    filter(transition == transition_name)
+  
+  #Data frame with the best model of the transition
+  tryCatch({df_selected_models_by_transition <- l_all_models_by_transition_est[[transition]] %>%
+    filter(model %in% best_model$model)
+  },
+  error = function(e){
+    print(e$message)
+    return(df_selected_models_by_transition)}
+  )
+
+  l_all_models_cov_matrix <- l_all_models_by_transition_cov[[transition_name]]
+  
+  l_selected_models_cov_matrix <- l_all_models_cov_matrix[best_model$model]
+
+  
+  #List with a data frame by each transition with the best model
+  l_selected_models_by_transition_est[transition] <- list(df_selected_models_by_transition)
+  
+  l_selected_models_by_transition_cov[transition] <- list(l_selected_models_cov_matrix)
+  
+}
+
+extract.results[[h]] <- list(l_all_models_by_transition_est = l_all_models_by_transition_est, 
+                             l_all_models_by_transition_knots = l_all_models_by_transition_knots, 
+                             l_selected_models_by_transition_est = l_selected_models_by_transition_est, 
+                             l_all_models_by_transition_cov = l_all_models_by_transition_cov, 
+                             l_selected_models_by_transition_cov = l_selected_models_by_transition_cov)
+
+}
+names(extract.results) <- names(MSMdfs)
+
+```
+
+#export estimates for all models (i.e., all distributions for all cancer types/transitions)
+```{r}
+l_all_models_by_transition_est_bind <- vector(mode = "list")
+
+for(i in 1:length(extract.results)){
+
+l_all_models_by_transition_est_binded <- ldply(extract.results[[i]][["l_all_models_by_transition_est"]], data.frame)
+l_all_models_by_transition_est_binded$ICCC_regroup <- rep(names(extract.results)[i])
+
+l_all_models_by_transition_est_bind[[i]] <-  l_all_models_by_transition_est_binded
+
+}
+names(l_all_models_by_transition_est_bind) <- names(extract.results)
+
+l_all_models_by_transition_est <- ldply(l_all_models_by_transition_est_bind, data.frame) #all together in single csv file
+
+write.csv(l_all_models_by_transition_est, "l_all_models_by_transition_est.csv")
+
+```
+
+
+#export knots for cancer types/transitions in which a spline model was chosen as best fitting distribution
+```{r}
+l_all_models_by_transition_knots_bind <- vector(mode = "list")
+
+for(i in 1:length(extract.results)){
+
+l_all_models_by_transition_knots_binded <- as.data.frame(extract.results[[i]][["l_all_models_by_transition_knots"]][["model_CRE_Death"]])
+l_all_models_by_transition_knots_binded$ICCC_regroup <- rep(names(extract.results)[i])
+
+l_all_models_by_transition_knots_bind[[i]] <-  l_all_models_by_transition_knots_binded
+
+}
+names(l_all_models_by_transition_est_bind) <- names(extract.results)
+
+#rbind all
+df_knots_all <- l_all_models_by_transition_knots_bind[[1]]
+for(i in 2:14){
+  df_knots_all <- rbind(df_knots_all, l_all_models_by_transition_knots_bind[[i]])
+}
+
+write.csv(df_knots_all, "df_model_knots.csv")
+
+```
+
+
+#export estimates from best fitting models (i.e., best fitting distribution for each cancer type/transition)
+
+```{r}
+
+l_selected_models_by_transition_est_bind <- vector(mode = "list")
+
+for(i in 1:length(extract.results)){
+
+l_selected_models_by_transition_est_binded <- ldply(extract.results[[i]][["l_selected_models_by_transition_est"]], data.frame)
+l_selected_models_by_transition_est_binded$ICCC_regroup <- rep(names(extract.results)[i])
+
+l_selected_models_by_transition_est_bind[[i]] <-  l_selected_models_by_transition_est_binded
+
+}
+names(l_selected_models_by_transition_est_bind) <- names(extract.results)
+
+l_selected_models_by_transition_est <- ldply(l_selected_models_by_transition_est_bind, data.frame) #all together in single csv file
+
+write.csv(l_selected_models_by_transition_est, "l_selected_models_by_transition_est.csv")
+
+```
+
+
+##export variance covariance matrices for all models (i.e., vcov matrix for all distributions for all cancer types/transitions)
+```{r}
+for(z in 1:length(extract.results)){ #14 cancer types
+  
+for (i in 1:length(extract.results[[z]][["l_all_models_by_transition_cov"]])){ #length = 3 for 3 transitions
+  
+  lapply(1:length(extract.results[[z]][["l_all_models_by_transition_cov"]][[i]]), function(x) 
+    
+  write.csv(extract.results[[z]][["l_all_models_by_transition_cov"]][[i]][[x]],
+                                                                              file = paste0(output_file_directory, '/cov_all/','cov_',
+                                                                                            names(extract.results[z]),
+                                                                                            ".",
+                                                                                            names(extract.results[[z]][["l_all_models_by_transition_cov"]][i]), 
+                                                                                            ".", 
+                                                                                            names(extract.results[[z]][["l_all_models_by_transition_cov"]][[i]][x]), 
+                                                                                            ".csv"),
+                                                                              row.names = T))
+}
+}
+```
+
+#export variance covariance matrices from best fitting models (i.e., vcov matrix from best fitting distribution for each cancer type/transition)
+```{r}
+
+for(i in 1:length(extract.results)){
+
+# write each cov in l_selected_models_by_transition_cov to a csv file 
+
+  lapply(1:length(extract.results[[i]][["l_selected_models_by_transition_cov"]]),  function (x)  
+  
+  write.csv(ifelse(length(extract.results[[i]][["l_selected_models_by_transition_cov"]][[x]]) == 1, 
+                          extract.results[[i]][["l_selected_models_by_transition_cov"]][[x]][1],    # stops from attaching model name to column names
+                          extract.results[[i]][["l_selected_models_by_transition_cov"]][[x]]),      # for empty transitions
+            file = paste0(output_file_directory, '/cov_selected/','cov_selected_', names(extract.results[i]), ".", names(extract.results[[i]][["l_selected_models_by_transition_cov"]][x]),'.csv'), # make a csv 
+            row.names = T))
+}
+```
+
+```{r}
+
+```
+

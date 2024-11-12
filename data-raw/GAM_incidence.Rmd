@@ -1,0 +1,678 @@
+
+======================================================================
+
+# 2018 Institute for Clinical Evaluative Sciences. All rights reserved.
+
+# TERMS OF USE:
+
+##Not for distribution.## This code and data is provided to the user solely for its own non-commerical use by individuals and/or not-for-profit corporations. Users shall not distribute without express written permission from the Institute for Clinical Evaluative Sciences.
+
+##Not-for-profit.## This code and data may not be used in connection with profit generating activities.
+
+##No liability.## The Institute for Clinical Evaluative Sciences makes no warranty or representation regarding the fitness, quality or reliability of this code and data.
+
+##No Support.## The Institute for Clinical Evaluative Sciences will not provide any technological, educational or informational support in connection with the use of this code and data.
+
+##Warning.## By receiving this code and data, user accepts these terms, and uses the code and data, solely at its own risk.
+
+======================================================================
+
+
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(pacman)
+p_load("dplyr", "tidyverse", "data.table", "base", "utils", "table1", "tableone", "ggpubr", "ggplot2", "tidyr", "survival", "survminer", "flexsurv", "flexsurvcure", "mixcure", "lubridate", "plyr", "Epi", "mgcv", "splines", "matrixStats", "stringr", "forecast", "scales", "tsibble", "ggforce")
+
+```
+
+#import StatCan population data
+
+```{r}
+#StatCanpop <- read.csv("REDACTED")
+
+popON_M <- filter(StatCanpop_PSDtransfer, GEO == "Ontario", Sex == "Males")
+popON_M <- filter(popON_M, !Age_group %in% c('0 to 4 years', '5 to 9 years', '10 to 14 years', '0 to 14 years'))
+popON_M <- popON_M[c(-2, -3)]
+popON_M$A <- as.numeric(rep(0:14, each = 50, times = 1))
+popON_M <- popON_M[c(-2)]
+popON_M <- popON_M %>% dplyr::rename(P = REF_DATE, N_July1 = VALUE)
+
+popON_M$N[1] <- popON_M$N_July1[1]
+for (i in 1:nrow(popON_M)) {
+  
+  if(popON_M$P[i] ==  1971) {
+    popON_M$N[i] <- popON_M$N_July1[i]
+  } else{
+    popON_M$N[i] <- (popON_M$N_July1[i-1] + popON_M$N_July1[i])/2
+  }
+}
+popON_M <- popON_M[c(-2)]
+popON_M$N <- round(popON_M$N)
+popON_M <- popON_M %>% dplyr::rename(Y = N)
+
+#####
+popON_F <- filter(StatCanpop_PSDtransfer, GEO == "Ontario", Sex == "Females")
+popON_F <- filter(popON_F, !Age_group %in% c('0 to 4 years', '5 to 9 years', '10 to 14 years', '0 to 14 years'))
+popON_F <- popON_F[c(-2, -3)]
+popON_F$A <- as.numeric(rep(0:14, each = 50, times = 1))
+popON_F <- popON_F[c(-2)]
+popON_F <- popON_F %>% dplyr::rename(P = REF_DATE, N_July1 = VALUE)
+
+popON_F$N[1] <- popON_F$N_July1[1]
+for (i in 1:nrow(popON_F)) {
+  
+  if(popON_F$P[i] ==  1971) {
+    popON_F$N[i] <- popON_F$N_July1[i]
+  } else{
+    popON_F$N[i] <- (popON_F$N_July1[i-1] + popON_F$N_July1[i])/2
+  }
+}
+popON_F <- popON_F[c(-2)]
+popON_F$N <- round(popON_F$N)
+popON_F <- popON_F %>% dplyr::rename(Y = N)
+
+### BOTH SEXES
+popON <- filter(StatCanpop_PSDtransfer, GEO == "Ontario", Sex == "Both sexes")
+popON <- filter(popON, !Age_group %in% c('0 to 4 years', '5 to 9 years', '10 to 14 years', '0 to 14 years'))
+popON <- popON[c(-2, -3)]
+popON$A <- as.numeric(rep(0:14, each = 50, times = 1))
+popON <- popON[c(-2)]
+popON <- popON %>% dplyr::rename(P = REF_DATE, N_July1 = VALUE)
+
+popON$N[1] <- popON$N_July1[1]
+for (i in 1:nrow(popON)) {
+  
+  if(popON$P[i] ==  1971) {
+    popON$N[i] <- popON$N_July1[i]
+  } else{
+    popON$N[i] <- (popON$N_July1[i-1] + popON$N_July1[i])/2
+  }
+}
+popON <- popON[c(-2)]
+popON$N <- round(popON$N)
+popON <- popON %>% dplyr::rename(Y = N)
+```
+
+#create childpop_M_Y, childpop_F_Y, and childpop_Y
+```{r}
+childpop_M_Y <- N2Y(data = popON_M, return.dfr = TRUE)
+
+childpop_F_Y <- N2Y(data = popON_F, return.dfr = TRUE)
+
+childpop_Y <- N2Y(data = popON, return.dfr = TRUE)
+
+```
+
+
+```{r}
+
+incidence_backup_Aug1621 <- read.csv("REDACTED")
+incidence <- as.data.frame(incidence_backup_Aug1621)
+
+incidence <- filter(incidence, dxyear > 1984) #running gam models on pogo data only.
+
+source('GAM_Functions.R')
+
+```
+
+#create new cancer type grouping variable for incidence analyses
+```{r}
+
+incidence <- incidence %>% mutate(ICCC_regroup = case_when(
+    iccc_subgroup_code %in% c("Ia.") ~ "ALL",
+    iccc_subgroup_code %in% c("Ib.", "Ic.", "Id.", "Ie.") ~ "AML and other leukemias",
+    iccc_subgroup_code %in% c("IIa.") ~ "Hodgkin lymphomas",
+    iccc_subgroup_code %in% c("IIb.", "IIc.", "IId.", "IIe.") ~ "Non-Hodgkin lymphomas and other lymphomas",
+    iccc_subgroup_code %in% c("IIIb.") ~ "Astrocytoma",
+    iccc_subgroup_code %in% c("IIIa.", "IIIc.", "IIId.", "IIIe.", "IIIf.") ~ "Other CNS neoplasms",
+    iccc_subgroup_code %in% c("IVa.", "IVb.") ~ "Neuroblastoma",
+    iccc_subgroup_code %in% c("V.") ~ "Retinoblastoma",
+    iccc_subgroup_code %in% c("VIa.", "VIb.", "VIc.") ~ "Renal tumours",
+    iccc_subgroup_code %in% c("VIIa.", "VIIb.", "VIIc.") ~ "Hepatic tumours",
+    iccc_subgroup_code %in% c("VIIIa.", "VIIIb.", "VIIIc.", "VIIId.", "VIIIe.") ~ "Bone tumours",
+    iccc_subgroup_code %in% c("IXa.", "IXb.", "IXc.", "IXd.", "IXe.") ~ "Soft tissue sarcomas",
+    iccc_subgroup_code %in% c("Xa.", "Xb.", "Xc.", "Xd.", "Xe.") ~ "Germ cell tumours",
+    iccc_subgroup_code %in% c("XIa.", "XIb.", "XIc.", "XId.", "XIe.", "XIf.", "XIIa.", "XIIb.") ~ "Other epithelial and unspecified neoplasms"))
+
+incidence$ICCC_regroup <- factor(incidence$ICCC_regroup,
+                               levels = c("ALL", "AML and other leukemias", "Hodgkin lymphomas", "Non-Hodgkin lymphomas and other lymphomas", "Astrocytoma", "Other CNS neoplasms", "Neuroblastoma", "Retinoblastoma", "Renal tumours", "Hepatic tumours", "Bone tumours", "Soft tissue sarcomas", "Germ cell tumours", "Other epithelial and unspecified neoplasms"),
+                               labels = c("ALL", "AML and other leukemias", "Hodgkin lymphomas", "Non-Hodgkin lymphomas and other lymphomas", "Astrocytoma", "Other CNS neoplasms", "Neuroblastoma", "Retinoblastoma", "Renal tumours", "Hepatic tumours", "Bone tumours", "Soft tissue sarcomas", "Germ cell tumours", "Other epithelial and unspecified neoplasms"))
+
+
+```
+
+#Incidence counts
+```{r}
+################ generating list of all possible combinations ##########
+####### Sex (2), dxyear (35), age (15), iccc regroup (14)
+####### Incidence by age, sex, dxyear, ICCC group between 1985-2019 
+
+count_NA <- expand.grid(dxyear = unique(incidence$dxyear),
+                        sex = unique(incidence$sex),
+                        age = unique(incidence$age),
+                        ICCC_regroup = unique(incidence$ICCC_regroup),stringsAsFactors = F) %>% as.data.frame()
+
+count <- incidence %>%
+  group_by(dxyear, sex, age, ICCC_regroup) %>%
+  dplyr::summarise(N = n()) %>% ungroup()
+
+new_count <- count_NA %>%
+  left_join(count)
+
+new_count$N[is.na(new_count$N)] <- 0
+
+```
+
+
+#expanded grid count data
+```{r}
+firstyr <- 1985
+lastyr <- 2019
+ageyrs <- ((lastyr - firstyr)+1)*2
+
+A <- as.numeric(rep(0:14, each = 70))
+lexisdata <- data.frame(A)
+lexisdata$P <- as.numeric(rep(firstyr:lastyr, each = 2, times = 15))
+lexisdata$C <- rep(NA)
+lexisdata$up <- as.numeric(rep(c(0:1)))
+lexisdata$C <- as.numeric((lexisdata$P - lexisdata$A - lexisdata$up))
+
+```
+
+#create A , P , C  vars
+```{r}
+
+incidence$A <- incidence$age
+incidence$P <- incidence$dxyear
+incidence$C <- incidence$birth_year
+
+```
+
+
+#create and store subsetted dataframes
+```{r}
+inc <- data.frame(incidence)
+tomodel <- inc %>% select(ikn, patient_id, sex, age, agegroups, agegroup, dxyear, birth_year, A, P, C, iccc_group_code, iccc_subgroup_code, ICCC_regroup)
+
+tomodel1 <- tomodel %>% dplyr::count(sex, ICCC_regroup)
+```
+
+#run list
+```{r}
+res.list <- vector(mode = "list")
+for(i in 1:dim(tomodel1)[1]){
+  
+df_tosave <- filter(incidence, sex == tomodel1$sex[i], ICCC_regroup == tomodel1$ICCC_regroup[i]) %>% group_by(P, C, A) %>% dplyr::summarise(N = n())
+
+df_tosave$up <- df_tosave$P - df_tosave$A - df_tosave$C
+df_tosave <- lexisdata %>% left_join(df_tosave)
+df_tosave[is.na(df_tosave)] <- 0
+df_tosave <- transform(df_tosave, A = A+(1+up)/3,
+                            P = P+(2-up)/3,
+                            C = C+(1+up)/3)
+  
+if(tomodel1$sex[i] == "Male"){
+  df_tosave <- left_join(df_tosave, childpop_M_Y, by=c("A", "P"))
+}
+else if (tomodel1$sex[i] == "Female") {
+df_tosave <- left_join(df_tosave, childpop_F_Y, by=c("A", "P"))
+}
+
+res.list[[i]] <- df_tosave
+
+names(res.list)[i] <- paste0(tomodel1$ICCC_regroup[i], "_", tomodel1$sex[i])
+
+res.list[[i]] <- as.data.frame(res.list[[i]])
+
+}
+
+```
+
+#######################################################################################
+#### Cross-validation #####
+#######################################################################################
+
+#1. split the dataset into multiple training sets (by id), save in a list
+```{r}
+trainingsets <- vector(mode = "list")
+
+for(i in 1:length(res.list)){
+
+  data_tr <- data_tr_f(res.list[[i]]) #stretch the dataframes that are needed to then create the 21 split dataframes for each
+
+  trainingsets[[i]] <-  list(data_tr = data_tr)
+}
+names(trainingsets) <- names(res.list)
+
+#saveRDS(trainingsets, file = "trainingsets.Rds")
+
+
+```
+
+#2. create list within a list: for every data_tr dataframe in trainingsets, split it up and save 21 new dataframes under each of the 24 named cancer type/sex combinations
+```{r}
+split_trainingsets <- vector(mode = "list")
+
+for(i in 1:length(trainingsets)){
+
+splits <- vector(mode = "list")
+for(j in 1:dim(ids)[1]){
+
+  df_byid  <- trainingsets[[i]][["data_tr"]] %>% filter(.id == ids$ids[j])
+  
+  splits[[j]] <- as.data.frame(df_byid)
+}
+  split_trainingsets[[i]] <- splits
+}
+names(split_trainingsets) <- names(trainingsets)
+
+#saveRDS(split_trainingsets, file = "split_trainingsets.Rds")
+
+
+```
+
+
+#3. run each of the 21 training datasets (saved in split_trainingsets list) through the gam model(s), prediction functions in order to calculate RMSE at the end. 
+# Save the RMSE values in a list according to gam model fit so that gam model with lowest RMSE can be run in step 4.
+```{r}
+options(warn = 0)
+
+newlist_tscv5 <- vector(mode = "list")
+
+for(i in 1:length(split_trainingsets)){ #length = 28 cancertype/sex groups
+
+results_tscv5 <- vector(mode = "list")
+
+for(j in 1:length(split_trainingsets[[i]])){ #run the 3 functions below on EACH of the 21 datasets under each of the 28 cancertype/sex combinations
+
+rates_tscv <- rates_tscv_f(split_trainingsets[[i]][[j]]) 
+Pfr_tscv5 <- Pfr_tscv5_f(split_trainingsets[[i]][[j]]) #predict 5th year ahead
+df_models_tscv5 <- gammodels_tscv5_f(split_trainingsets[[i]][[j]]) #predict 5th year ahead
+
+results_tscv5[[j]] <-  list(rates_tscv = rates_tscv, df_models_tscv5 = df_models_tscv5)
+
+}
+newlist_tscv5[[i]] <-  results_tscv5
+}
+names(newlist_tscv5) <- names(split_trainingsets)
+
+#summary(warnings(newlist_tscv5))
+```
+
+#4. RMSE results for 5-year ahead TSCV
+```{r}
+RMSEresults_tscv5 <- vector(mode = "list")
+
+for(i in 1:length(newlist_tscv5)){ #length = 28 cancertype/sex groups
+
+RMSEs_tscv5 <- vector(mode = "list") #create a new list that contains the RMSE results for each of the 28 cancertype/sex groups
+
+df_models1_bind <- newlist_tscv5[[i]][[1]][["df_models_tscv5"]][[1]]
+df_models2_bind <- newlist_tscv5[[i]][[1]][["df_models_tscv5"]][[2]]
+df_models3_bind <- newlist_tscv5[[i]][[1]][["df_models_tscv5"]][[3]]
+df_models4_bind <- newlist_tscv5[[i]][[1]][["df_models_tscv5"]][[4]]
+df_models5_bind <- newlist_tscv5[[i]][[1]][["df_models_tscv5"]][[5]]
+df_models6_bind <- newlist_tscv5[[i]][[1]][["df_models_tscv5"]][[6]]
+
+for(k in 2:21){  
+df_models1_bind <- rbind(df_models1_bind, newlist_tscv5[[i]][[k]][["df_models_tscv5"]][[1]])
+df_models2_bind <- rbind(df_models2_bind, newlist_tscv5[[i]][[k]][["df_models_tscv5"]][[2]])
+df_models3_bind <- rbind(df_models3_bind, newlist_tscv5[[i]][[k]][["df_models_tscv5"]][[3]])
+df_models4_bind <- rbind(df_models4_bind, newlist_tscv5[[i]][[k]][["df_models_tscv5"]][[4]])
+df_models5_bind <- rbind(df_models5_bind, newlist_tscv5[[i]][[k]][["df_models_tscv5"]][[5]])
+df_models6_bind <- rbind(df_models6_bind, newlist_tscv5[[i]][[k]][["df_models_tscv5"]][[6]])
+}
+
+#model1
+    df_models1_bind <- df_models1_bind[c(-1)]
+    df_models1_bind <- df_models1_bind %>% dplyr::rename(A = age, predrate = rate)
+    df_models1_bind <- df_models1_bind[,c(10,1,2,3,4,5,6,7,8,9,11)]
+    predrates_tscv_bind_m1 <- merge(newlist_tscv5[[i]][[21]][["rates_tscv"]], df_models1_bind, all = TRUE)
+    #predrates_tscv_bind_m1 <- left_join(df_models1_bind, newlist_tscv5[[i]][[21]][["rates_tscv"]], by = c("P", "A")) 
+    predrates_tscv_bind_m1$RMSE <- ((predrates_tscv_bind_m1$rate - predrates_tscv_bind_m1$predrate)^2)
+    
+    RMSE_year_m2 <- predrates_tscv_bind_m1 %>% group_by(P) %>% dplyr::summarise(RMSE_year = sqrt(mean(RMSE)))
+    predrates_tscv_RMSE_m1 <- sqrt(mean(RMSE_year_m2$RMSE_year^2, na.rm = TRUE))
+    predrates_tscv_RMSE_m1 <- as.data.frame(predrates_tscv_RMSE_m1)
+    colnames(predrates_tscv_RMSE_m1) <- c("RMSE")
+    predrates_tscv_RMSE_m1$modelno <- rep(1, times = nrow(predrates_tscv_RMSE_m1))
+
+#model2
+df_models2_bind <- df_models2_bind[c(-1)]
+    df_models2_bind <- df_models2_bind %>% dplyr::rename(A = age, predrate = rate)
+    df_models2_bind <- df_models2_bind[,c(10,1,2,3,4,5,6,7,8,9,11)]
+    predrates_tscv_bind_m2 <- merge(newlist_tscv5[[i]][[21]][["rates_tscv"]], df_models2_bind, all = TRUE)
+    #predrates_tscv_bind_m2 <- left_join(df_models2_bind, newlist_tscv5[[i]][[21]][["rates_tscv"]], by = c("P", "A"))
+    predrates_tscv_bind_m2$RMSE <- ((predrates_tscv_bind_m2$rate - predrates_tscv_bind_m2$predrate)^2)
+    
+    RMSE_year_m2 <- predrates_tscv_bind_m2 %>% group_by(P) %>% dplyr::summarise(RMSE_year = sqrt(mean(RMSE)))
+    predrates_tscv_RMSE_m2 <- sqrt(mean(RMSE_year_m2$RMSE_year^2, na.rm = TRUE))
+    predrates_tscv_RMSE_m2 <- as.data.frame(predrates_tscv_RMSE_m2)
+    colnames(predrates_tscv_RMSE_m2) <- c("RMSE")
+     predrates_tscv_RMSE_m2$modelno <- rep(2, times = nrow(predrates_tscv_RMSE_m2))
+    
+#model3
+ df_models3_bind <- df_models3_bind[c(-1)]
+    df_models3_bind <- df_models3_bind %>% dplyr::rename(A = age, predrate = rate)
+    df_models3_bind <- df_models3_bind[,c(10,1,2,3,4,5,6,7,8,9,11)]
+    predrates_tscv_bind_m3 <- merge(newlist_tscv5[[i]][[21]][["rates_tscv"]], df_models3_bind, all = TRUE)
+    #predrates_tscv_bind_m3 <- left_join(df_models3_bind, newlist_tscv5[[i]][[21]][["rates_tscv"]], by = c("P", "A"))
+    predrates_tscv_bind_m3$RMSE <- ((predrates_tscv_bind_m3$rate - predrates_tscv_bind_m3$predrate)^2)
+    
+    RMSE_year_m3 <- predrates_tscv_bind_m3 %>% group_by(P) %>% dplyr::summarise(RMSE_year = sqrt(mean(RMSE)))
+    predrates_tscv_RMSE_m3 <- sqrt(mean(RMSE_year_m3$RMSE_year^2, na.rm = TRUE))
+    predrates_tscv_RMSE_m3 <- as.data.frame(predrates_tscv_RMSE_m3)
+    colnames(predrates_tscv_RMSE_m3) <- c("RMSE")
+    predrates_tscv_RMSE_m3$modelno <- rep(3, times = nrow(predrates_tscv_RMSE_m3))
+    
+#model4
+ df_models4_bind <- df_models4_bind[c(-1)]
+    df_models4_bind <- df_models4_bind %>% dplyr::rename(A = age, predrate = rate)
+    df_models4_bind <- df_models4_bind[,c(10,1,2,3,4,5,6,7,8,9,11)]
+    predrates_tscv_bind_m4 <- merge(newlist_tscv5[[i]][[21]][["rates_tscv"]], df_models4_bind, all = TRUE)
+    #predrates_tscv_bind_m4 <- left_join(df_models4_bind, newlist_tscv5[[i]][[21]][["rates_tscv"]], by = c("P", "A")) 
+    predrates_tscv_bind_m4$RMSE <- ((predrates_tscv_bind_m4$rate - predrates_tscv_bind_m4$predrate)^2)
+    
+    RMSE_year_m4 <- predrates_tscv_bind_m4 %>% group_by(P) %>% dplyr::summarise(RMSE_year = sqrt(mean(RMSE)))
+    predrates_tscv_RMSE_m4 <- sqrt(mean(RMSE_year_m4$RMSE_year^2, na.rm = TRUE))
+    predrates_tscv_RMSE_m4 <- as.data.frame(predrates_tscv_RMSE_m4)
+    colnames(predrates_tscv_RMSE_m4) <- c("RMSE")
+    predrates_tscv_RMSE_m4$modelno <- rep(4, times = nrow(predrates_tscv_RMSE_m4))
+    
+#model5
+df_models5_bind <- df_models5_bind[c(-1)]
+    df_models5_bind <- df_models5_bind %>% dplyr::rename(A = age, predrate = rate)
+    df_models5_bind <- df_models5_bind[,c(10,1,2,3,4,5,6,7,8,9,11)]
+    predrates_tscv_bind_m5 <- merge(newlist_tscv5[[i]][[21]][["rates_tscv"]], df_models5_bind, all = TRUE)
+    #predrates_tscv_bind_m5 <- left_join(df_models5_bind, newlist_tscv5[[i]][[21]][["rates_tscv"]], by = c("P", "A")) 
+    predrates_tscv_bind_m5$RMSE <- ((predrates_tscv_bind_m5$rate - predrates_tscv_bind_m5$predrate)^2)
+    
+    RMSE_year_m5 <- predrates_tscv_bind_m5 %>% group_by(P) %>% dplyr::summarise(RMSE_year = sqrt(mean(RMSE)))
+    predrates_tscv_RMSE_m5 <- sqrt(mean(RMSE_year_m5$RMSE_year^2, na.rm = TRUE))
+    predrates_tscv_RMSE_m5 <- as.data.frame(predrates_tscv_RMSE_m5)
+    colnames(predrates_tscv_RMSE_m5) <- c("RMSE")    
+    predrates_tscv_RMSE_m5$modelno <- rep(5, times = nrow(predrates_tscv_RMSE_m5))
+    
+#model6   
+df_models6_bind <- df_models6_bind[c(-1)]
+    df_models6_bind <- df_models6_bind %>% dplyr::rename(A = age, predrate = rate)
+    df_models6_bind <- df_models6_bind[,c(10,1,2,3,4,5,6,7,8,9,11)]
+    predrates_tscv_bind_m6 <- merge(newlist_tscv5[[i]][[21]][["rates_tscv"]], df_models6_bind, all = TRUE)
+    #predrates_tscv_bind_m6 <- left_join(df_models6_bind, newlist_tscv5[[i]][[21]][["rates_tscv"]], by = c("P", "A"))
+    predrates_tscv_bind_m6$RMSE <- ((predrates_tscv_bind_m6$rate - predrates_tscv_bind_m6$predrate)^2)
+    
+    RMSE_year_m6 <- predrates_tscv_bind_m6 %>% group_by(P) %>% dplyr::summarise(RMSE_year = sqrt(mean(RMSE)))
+    predrates_tscv_RMSE_m6 <- sqrt(mean(RMSE_year_m6$RMSE_year^2, na.rm = TRUE))
+    predrates_tscv_RMSE_m6 <- as.data.frame(predrates_tscv_RMSE_m6)
+    colnames(predrates_tscv_RMSE_m6) <- c("RMSE")
+    predrates_tscv_RMSE_m6$modelno <- rep(6, times = nrow(predrates_tscv_RMSE_m6))
+
+RMSE_bind_tscv5 <- rbind(predrates_tscv_RMSE_m1, predrates_tscv_RMSE_m2, predrates_tscv_RMSE_m3, predrates_tscv_RMSE_m4, predrates_tscv_RMSE_m5, predrates_tscv_RMSE_m6)
+
+#RMSE_bind_tscv5 <- rbind(predrates_tscv_bind_m1, predrates_tscv_bind_m2, predrates_tscv_bind_m3, predrates_tscv_bind_m4, predrates_tscv_bind_m5, predrates_tscv_bind_m6) #use to check what dfs look like prior to overall RMSE calc
+
+RMSEresults_tscv5[[i]] <-  RMSE_bind_tscv5
+
+}
+names(RMSEresults_tscv5) <- names(newlist_tscv5)
+
+```
+
+#Run all 6 GAMS and produce plots for visual inspection prior to selecting ones that need manual selection
+```{r}
+allGAMfits <- vector(mode = "list", length(res.list))
+
+for(i in 1:length(res.list)){
+
+models_all <- gammodels_all_f(res.list[[i]])
+models_all$age <- as.factor(models_all$age)
+models_all <- models_all[c(-1)]
+models_all <- models_all %>% dplyr::rename(A = age)
+
+observedrates <- rates_f(res.list[[i]])
+observedrates$A <- as.factor(observedrates$A)
+
+m1 <- filter(models_all, status == "predicted, k=10, penalty=1")
+m2 <- filter(models_all, status == "predicted, k=10, penalty=2")
+m3 <- filter(models_all, status == "predicted, k=10, penalty=2,1")
+m4 <- filter(models_all, status == "predicted, k=5, penalty=1")
+m5 <- filter(models_all, status == "predicted, k=5, penalty=2")
+m6 <- filter(models_all, status == "predicted, k=5, penalty=2,1")
+
+m1 <- dplyr::bind_rows(observedrates, m1)
+m2 <- dplyr::bind_rows(observedrates, m2)
+m3 <- dplyr::bind_rows(observedrates, m3)
+m4 <- dplyr::bind_rows(observedrates, m4)
+m5 <- dplyr::bind_rows(observedrates, m5)
+m6 <- dplyr::bind_rows(observedrates, m6)
+
+plot_freey_m1 <- ggplot(m1, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(x = "Year of diagnosis", y = "Rate per million person-years", title = paste0("Projected cancer incidence rates for", " ", paste0(names(res.list[i])), ", free y axes and 95% CIs")) + facet_wrap(m1$A, scales = "free_y") + theme(legend.position = "bottom") #+ theme(axis.text.y = element_blank())
+plot_CI_freey_m1 <- plot_freey_m1 + geom_ribbon(aes(ymin=lwr_ci, ymax=upr_ci), linetype=2, alpha=0.1)
+
+plot_freey_m2 <- ggplot(m2, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(x = "Year of diagnosis", y = "Rate per million person-years", title = paste0("Projected cancer incidence rates for", " ", paste0(names(res.list[i])), ", free y axes and 95% CIs")) + facet_wrap(m2$A, scales = "free_y") + theme(legend.position = "bottom") #+ theme(axis.text.y = element_blank())
+plot_CI_freey_m2 <- plot_freey_m2 + geom_ribbon(aes(ymin=lwr_ci, ymax=upr_ci), linetype=2, alpha=0.1)
+
+plot_freey_m3 <- ggplot(m3, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(x = "Year of diagnosis", y = "Rate per million person-years", title = paste0("Projected cancer incidence rates for", " ", paste0(names(res.list[i])), ", free y axes and 95% CIs")) + facet_wrap(m3$A, scales = "free_y") + theme(legend.position = "bottom") #+ theme(axis.text.y = element_blank())
+plot_CI_freey_m3 <- plot_freey_m3 + geom_ribbon(aes(ymin=lwr_ci, ymax=upr_ci), linetype=2, alpha=0.1)
+
+plot_freey_m4 <- ggplot(m4, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(x = "Year of diagnosis", y = "Rate per million person-years", title = paste0("Projected cancer incidence rates for", " ", paste0(names(res.list[i])), ", free y axes and 95% CIs")) + facet_wrap(m4$A, scales = "free_y") + theme(legend.position = "bottom") #+ theme(axis.text.y = element_blank())
+plot_CI_freey_m4 <- plot_freey_m4 + geom_ribbon(aes(ymin=lwr_ci, ymax=upr_ci), linetype=2, alpha=0.1)
+
+plot_freey_m5 <- ggplot(m5, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(x = "Year of diagnosis", y = "Rate per million person-years", title = paste0("Projected cancer incidence rates for", " ", paste0(names(res.list[i])), ", free y axes and 95% CIs")) + facet_wrap(m5$A, scales = "free_y") + theme(legend.position = "bottom") #+ theme(axis.text.y = element_blank())
+plot_CI_freey_m5 <- plot_freey_m5 + geom_ribbon(aes(ymin=lwr_ci, ymax=upr_ci), linetype=2, alpha=0.1)
+
+plot_freey_m6 <- ggplot(m6, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(x = "Year of diagnosis", y = "Rate per million person-years", title = paste0("Projected cancer incidence rates for", " ", paste0(names(res.list[i])), ", free y axes and 95% CIs")) + facet_wrap(m6$A, scales = "free_y") + theme(legend.position = "bottom") #+ theme(axis.text.y = element_blank())
+plot_CI_freey_m6 <- plot_freey_m6 + geom_ribbon(aes(ymin=lwr_ci, ymax=upr_ci), linetype=2, alpha=0.1)
+
+allGAMfits[[i]] <- list(plot_CI_freey_m1, plot_CI_freey_m2, plot_CI_freey_m3, plot_CI_freey_m4, plot_CI_freey_m5, plot_CI_freey_m6)
+
+names(allGAMfits) <- names(res.list)
+}
+
+pdf("REDACTED", width = 11, height = 8)
+for (i in 1:168) { #168 for 28 groups, printing 6 plots each
+  print(allGAMfits[[i]])
+}
+dev.off()
+```
+
+
+#5. Create table with lowest RMSE value/model fit for each of the 28 cancertype/sex combinations. Allow this to be pulled and referenced so that right m1 can be run within final prediction and plotting in #6
+```{r}
+#Combine all RMSE results
+RMSEresults_bind_tscv5 <- ldply(RMSEresults_tscv5, data.frame)
+RMSEresults_bind_tscv5 <- RMSEresults_bind_tscv5 %>% dplyr::rename(group = .id)
+RMSEresults_bind_tscv5$id <- rep(1:28, each = 6, times = 1)
+
+#Create table with convergence results
+convergence_bind <- newlist_tscv5[[1]][[21]][["df_models_tscv5"]][[7]]
+
+for(i in 2:28){
+  convergence_bind <- rbind(convergence_bind, newlist_tscv5[[i]][[21]][["df_models_tscv5"]][[7]])
+}
+convergence_bind$group <- paste0(RMSEresults_bind_tscv5$group)
+convergence_bind$id <- rep(1:28, each = 6, times = 1)
+
+RMSEresults_bind_tscv5 <- left_join(RMSEresults_bind_tscv5, convergence_bind, by = c("group", "modelno", "id"))
+
+write.csv(RMSEresults_bind_tscv5, "RMSEresults_allmodels_50to40_Mar922.csv") #prior to manual selection**
+
+#######
+#filter to find min RMSE for each group and save
+RMSEresults_min_tscv5 <- RMSEresults_bind_tscv5 %>% group_by(group) %>% slice(which.min(RMSE)) %>% select(!RMSE) %>% mutate(manualselection = rep("No"))
+
+#Inspect pdfallGAMfits_1950to2040_Mar922.pdf to determine changes. manually choose model for select groups where initially chosen one was not most appropriate - March9 2022
+
+#Females
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "ALL_Female"] <- 5 #was 6 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "ALL_Female"] <- "Yes"
+
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Neuroblastoma_Female"] <- 5 #was 4 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Neuroblastoma_Female"] <- "Yes"
+
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Renal tumours_Female"] <- 2 #was 1 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Renal tumours_Female"] <- "Yes"
+
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Hepatic tumours_Female"] <- 3 #was 1 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Hepatic tumours_Female"] <- "Yes"
+
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Soft tissue sarcomas_Female"] <- 5 #was 4 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Soft tissue sarcomas_Female"] <- "Yes"
+
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Other epithelial and unspecified neoplasms_Female"] <- 5 #was 2 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Other epithelial and unspecified neoplasms_Female"] <- "Yes"
+
+#### Male
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "AML and other leukemias_Male"] <- 5 #was 4 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "AML and other leukemias_Male"] <- "Yes"
+
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Non-Hodgkin lymphomas and other lymphomas_Male"] <- 4 #was 1 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Non-Hodgkin lymphomas and other lymphomas_Male"] <- "Yes"
+
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Neuroblastoma_Male"] <- 2 #was 1 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Neuroblastoma_Male"] <- "Yes"
+
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Hepatic tumours_Male"] <- 2 #was 3 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Hepatic tumours_Male"] <- "Yes"
+
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Bone tumours_Male"] <- 6 #was 3 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Bone tumours_Male"] <- "Yes"
+
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Germ cell tumours_Male"] <- 5 #was 6 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Germ cell tumours_Male"] <- "Yes"
+
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Other epithelial and unspecified neoplasms_Male"] <- 5 #was 4 prior
+RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Other epithelial and unspecified neoplasms_Male"] <- "Yes"
+
+RMSEresults_min_tscv5 <- left_join(RMSEresults_min_tscv5, RMSEresults_bind_tscv5, by = c("group", "modelno", "id", "converge"))
+
+RMSEresults_min_tscv5 <- RMSEresults_min_tscv5[order(RMSEresults_min_tscv5$id),]
+write.csv(RMSEresults_min_tscv5, "RMSEresults_selectedmodels_50to40_Mar922.csv")
+
+```
+
+
+#######################################################################################
+#### Predict future incidence rates and plot #####
+#######################################################################################
+
+#6. For the CHOSEN gam model fit chosen from tscv - predict for each cancer type/sex incidence count frame and plot
+```{r}
+
+plotrates_list <- vector(mode = "list", length(res.list)) #res.list contains the original 28 incidence count dataframes for all cancertype/sex groupings
+
+for(i in 1:length(res.list)){
+
+observedrates <- rates_f(res.list[[i]])
+m1 <- gammodel_f(data = res.list[[i]], modelno = RMSEresults_min_tscv5$modelno[i]) #using model selection from tscv predicting 5th year ahead
+#predicts 2020-2040 only:
+#Pfr_export <- Pfr_export_f(res.list[[i]]) 
+#predrates <- predrates_f(res.list[[i]])
+#plotrates <- plotrates_f(res.list[[i]])
+#plot <- plot_f(res.list[[i]]) #plot with predicted rates
+#plot_freey <- plot_freey_f(res.list[[i]]) #plot with predicted rates, free y axis for each age
+#plot_CI <- plot_CI_f(res.list[[i]]) #plot with predicted rates + cipred2 95% CI
+#plot_CI_freey <- plot_CI_freey_f(res.list[[i]]) #plot with predicted rates, free y axis for each age + cipred2 95% CI
+
+#predict back and forward (1950-2040)
+Pfr_export_all <- Pfr_export_all_f(res.list[[i]])
+predrates_all <- predrates_all_f(res.list[[i]])
+plotrates_all <- plotrates_all_f(res.list[[i]])
+# 
+# plot_all <- plot_all_f(res.list[[i]])
+# plot_all_freey <- plot_all_freey_f(res.list[[i]])
+# plot_CI_all <- plot_CI_all_f(res.list[[i]])
+# plot_CI_all_freey <- plot_CI_all_freey_f(res.list[[i]])
+
+#plotrates_list[[i]] <- list(plot_all = plot_all, plot_all_freey = plot_all_freey, plot_CI_all = plot_CI_all, plot_CI_all_freey = plot_CI_all_freey) #for exporting plots of whole observed period+predicted period
+
+#plotrates_list[[i]] <- list(predrates_all = predrates_all) #for exporting predicted rates csv
+
+plotrates_list[[i]] <- list(plotrates_all = plotrates_all) #for plotsums graphs
+}
+names(plotrates_list) <- names(res.list)
+
+```
+
+#export plots
+```{r, include = FALSE}
+
+pdf("REDACTED", width = 11, height = 8)
+for (i in 1:112) { #112 for 28 groups, printing 4 plots each
+  print(plotrates_list[[i]])
+}
+dev.off()
+```
+
+#export csv of predicted rates
+```{r}
+#run plotrates_list with just dataframes first (predrates_all)
+predrates_all_bind <- ldply(plotrates_list, data.frame)
+colnames(predrates_all_bind) <- c("group", "P", "lograte", "logSE", "A", "rate", "SE", "lower", "upper", "status")
+
+write.csv(predrates_all_bind, "GAM_incidence_results.csv")
+
+```
+
+#export plots of plotsums
+```{r}
+
+plotsums_bind <- ldply(plotrates_list, data.frame) #contains all plotrates_all dfs
+colnames(plotsums_bind) <- c("group", "P", "rate", "A", "status", "lograte", "logSE", "SE", "lower", "upper")
+plotsums_bind$id <- rep(1:14, each = nrow(plotrates_list[["ALL_Female"]][["plotrates_all"]]), times = 2)
+
+plotsums_bind$id <- factor(plotsums_bind$id,
+                           levels = c(1:14),
+                           labels = c("ALL", "AML and other leukemias", "Hodgkin lymphomas", "Non-Hodgkin lymphomas and other lymphomas", "Astrocytoma", "Other CNS neoplasms", "Neuroblastoma", "Retinoblastoma", "Renal tumours", "Hepatic tumours", "Bone tumours", "Soft tissue sarcomas", "Germ cell tumours", "Other epithelial and unspecified neoplasms"))
+
+#plotsums_bind_tscv5 <- plotsums_bind #saving a version when running above chunk with tscv5 results (to make combined plots later)
+#plotsums_bind_tscv1 <- plotsums_bind
+ 
+plotsums_bind_cancertype <- aggregate(rate ~ P + id + status, data = plotsums_bind, FUN = sum)
+
+#merge with empty df where we can have NA for observed rates in future years - to get plot to run
+P <- rep(1950:2040, each = 14, times = 1)
+emptydf <- as.data.frame(P)
+groupnames <- c("ALL", "AML and other leukemias", "Hodgkin lymphomas", "Non-Hodgkin lymphomas and other lymphomas", "Astrocytoma", "Other CNS neoplasms", "Neuroblastoma", "Retinoblastoma", "Renal tumours", "Hepatic tumours", "Bone tumours", "Soft tissue sarcomas", "Germ cell tumours", "Other epithelial and unspecified neoplasms")
+emptydf$id <- rep(groupnames, each = 1, times = length(1950:2040))
+emptydf$status <- rep("observed")
+emptydf$rate <- rep(NA)
+emptydf <- emptydf %>% filter(P <= 1984 & P >= 2020) #remove 1985-2019 as we have observed data already
+
+plotsums_bind_cancertype_bind <- rbind(plotsums_bind_cancertype, emptydf)
+
+pdf("plotsums_cancertype_tscv5_50to40_Mar922.pdf")
+
+for(i in 1:4){
+  print((ggplot(plotsums_bind_cancertype_bind, aes(x = P, y = rate)) + geom_point(aes(color=status)) + labs(title = "Incidence rates summed for all sexes and ages - by cancer type", subtitle = "Models selected using tsCV with multi-year forecasting", x = "Year", y = "Incidence rate per million") + theme(legend.position = "bottom")) + facet_wrap_paginate(plotsums_bind_cancertype_bind$id, ncol = 2, nrow = 2, page = i))
+}
+
+for(i in 1:4){
+  print((ggplot(plotsums_bind_cancertype_bind, aes(x = P, y = rate)) + geom_point(aes(color=status)) + labs(title = "Incidence rates summed for all sexes and ages - by cancer type. Free Y axis", subtitle = "Models selected using tsCV with multi-year forecasting", x = "Year", y = "Incidence rate per million") + theme(legend.position = "bottom")) + facet_wrap_paginate(plotsums_bind_cancertype_bind$id, ncol = 2, nrow = 2, page = i, scales = "free_y"))
+}
+dev.off()
+
+#######
+plotsums_bind_all <- aggregate(rate ~ P + status, data = plotsums_bind, FUN = sum)
+
+#merge with empty df again
+P <- rep(1950:2040, each = 1, times = 1)
+emptydf <- as.data.frame(P)
+emptydf$status <- rep("observed")
+emptydf$rate <- rep(NA)
+emptydf <- emptydf %>% filter(P <= 1984 & P >= 2020) #remove 1985-2019 as we have observed data already
+
+
+plotsums_bind_all_bind <- rbind(plotsums_bind_all, emptydf)
+
+pdf("plotsums_all_tscv5_50to40_Mar922.pdf")
+print(ggplot(plotsums_bind_all_bind, aes(x = P, y = rate)) + geom_point(aes(color=status)) + labs(title = "Overall incidence rates: summed for all sexes, ages, and cancer types", x = "Year", y = "Incidence rate per million") + theme(legend.position = "bottom"))
+dev.off()
+
+
+```
+
