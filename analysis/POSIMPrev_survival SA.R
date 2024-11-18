@@ -329,7 +329,7 @@ HMD_pop_90to100 <- rbind(HMD_pop_m_90to100, HMD_pop_f_90to100)
 HMD_pop_100over <- rbind(HMD_pop_100over_m, HMD_pop_100over_f)
 
 ### StatCan
-popON <- read.csv("~/GitHub/POSIM-prev/data/pop_ON_Oct2021.csv") #Pop estimates for each year on JULY 1st (*StatCan captures period from July 1 to June 30.)
+popON <- read.csv("~/GitHub/POSIM-prev/data/pop_ON.csv") #Pop estimates for each year on JULY 1st (*StatCan captures period from July 1 to June 30.)
 colnames(popON)[1] <- "REF_DATE"
 
 #change pop data from representing pop on July 1st to Jan 1st
