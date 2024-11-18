@@ -1,7 +1,7 @@
 
 ======================================================================
 
-# 2018 Institute for Clinical Evaluative Sciences. All rights reserved.
+# 2024 Institute for Clinical Evaluative Sciences. All rights reserved.
 
 # TERMS OF USE:
 
@@ -34,7 +34,7 @@ p_load("dplyr", "tidyverse", "data.table", "base", "utils", "table1", "tableone"
 ```{r}
 #StatCanpop <- read.csv("REDACTED")
 
-popON_M <- filter(StatCanpop_PSDtransfer, GEO == "Ontario", Sex == "Males")
+popON_M <- filter(StatCanpop, GEO == "Ontario", Sex == "Males")
 popON_M <- filter(popON_M, !Age_group %in% c('0 to 4 years', '5 to 9 years', '10 to 14 years', '0 to 14 years'))
 popON_M <- popON_M[c(-2, -3)]
 popON_M$A <- as.numeric(rep(0:14, each = 50, times = 1))
@@ -55,7 +55,7 @@ popON_M$N <- round(popON_M$N)
 popON_M <- popON_M %>% dplyr::rename(Y = N)
 
 #####
-popON_F <- filter(StatCanpop_PSDtransfer, GEO == "Ontario", Sex == "Females")
+popON_F <- filter(StatCanpop, GEO == "Ontario", Sex == "Females")
 popON_F <- filter(popON_F, !Age_group %in% c('0 to 4 years', '5 to 9 years', '10 to 14 years', '0 to 14 years'))
 popON_F <- popON_F[c(-2, -3)]
 popON_F$A <- as.numeric(rep(0:14, each = 50, times = 1))
@@ -76,7 +76,7 @@ popON_F$N <- round(popON_F$N)
 popON_F <- popON_F %>% dplyr::rename(Y = N)
 
 ### BOTH SEXES
-popON <- filter(StatCanpop_PSDtransfer, GEO == "Ontario", Sex == "Both sexes")
+popON <- filter(StatCanpop, GEO == "Ontario", Sex == "Both sexes")
 popON <- filter(popON, !Age_group %in% c('0 to 4 years', '5 to 9 years', '10 to 14 years', '0 to 14 years'))
 popON <- popON[c(-2, -3)]
 popON$A <- as.numeric(rep(0:14, each = 50, times = 1))
@@ -97,7 +97,7 @@ popON$N <- round(popON$N)
 popON <- popON %>% dplyr::rename(Y = N)
 ```
 
-#create childpop_M_Y, childpop_F_Y, and childpop_Y
+#create risk time ("Person-Years") in Lexis triangles from population count data.
 ```{r}
 childpop_M_Y <- N2Y(data = popON_M, return.dfr = TRUE)
 
@@ -107,13 +107,16 @@ childpop_Y <- N2Y(data = popON, return.dfr = TRUE)
 
 ```
 
+#Load individual-level patient data with incidence characteristics. 
+#We utilized incident cases of primary childhood cancer from 1985-2019
+#Data source - Pediatric Oncology Group of Ontario Networked Information System (POGONIS)
 
 ```{r}
 
-incidence_backup_Aug1621 <- read.csv("REDACTED")
-incidence <- as.data.frame(incidence_backup_Aug1621)
+incidence_IPD <- read.csv("REDACTED")
+incidence <- as.data.frame(incidence_IPD)
 
-incidence <- filter(incidence, dxyear > 1984) #running gam models on pogo data only.
+incidence <- filter(incidence, dxyear > 1984) #GAM models are informed by individual-level data for patients diagnosed from 1985-2019
 
 source('GAM_Functions.R')
 
@@ -303,7 +306,7 @@ names(newlist_tscv5) <- names(split_trainingsets)
 #summary(warnings(newlist_tscv5))
 ```
 
-#4. RMSE results for 5-year ahead TSCV
+#4. RMSE results for 5-year ahead TSCV (time-series cross-validation)
 ```{r}
 RMSEresults_tscv5 <- vector(mode = "list")
 
@@ -499,59 +502,59 @@ convergence_bind$id <- rep(1:28, each = 6, times = 1)
 
 RMSEresults_bind_tscv5 <- left_join(RMSEresults_bind_tscv5, convergence_bind, by = c("group", "modelno", "id"))
 
-write.csv(RMSEresults_bind_tscv5, "RMSEresults_allmodels_50to40_Mar922.csv") #prior to manual selection**
+write.csv(RMSEresults_bind_tscv5, "RMSEresults_allmodels.csv") #prior to manual selection**
 
 #######
 #filter to find min RMSE for each group and save
 RMSEresults_min_tscv5 <- RMSEresults_bind_tscv5 %>% group_by(group) %>% slice(which.min(RMSE)) %>% select(!RMSE) %>% mutate(manualselection = rep("No"))
 
-#Inspect pdfallGAMfits_1950to2040_Mar922.pdf to determine changes. manually choose model for select groups where initially chosen one was not most appropriate - March9 2022
+#Inspect pdf of all GAM fits to determine changes. manually choose model for select groups where initially chosen one was not most appropriate - March 2022
 
 #Females
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "ALL_Female"] <- 5 #was 6 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "ALL_Female"] <- 5 #was model #6 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "ALL_Female"] <- "Yes"
 
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Neuroblastoma_Female"] <- 5 #was 4 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Neuroblastoma_Female"] <- 5 #was model #4 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Neuroblastoma_Female"] <- "Yes"
 
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Renal tumours_Female"] <- 2 #was 1 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Renal tumours_Female"] <- 2 #was model #1 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Renal tumours_Female"] <- "Yes"
 
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Hepatic tumours_Female"] <- 3 #was 1 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Hepatic tumours_Female"] <- 3 #was model #1 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Hepatic tumours_Female"] <- "Yes"
 
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Soft tissue sarcomas_Female"] <- 5 #was 4 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Soft tissue sarcomas_Female"] <- 5 #was model #4 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Soft tissue sarcomas_Female"] <- "Yes"
 
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Other epithelial and unspecified neoplasms_Female"] <- 5 #was 2 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Other epithelial and unspecified neoplasms_Female"] <- 5 #was model #2 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Other epithelial and unspecified neoplasms_Female"] <- "Yes"
 
 #### Male
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "AML and other leukemias_Male"] <- 5 #was 4 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "AML and other leukemias_Male"] <- 5 #was model #4 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "AML and other leukemias_Male"] <- "Yes"
 
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Non-Hodgkin lymphomas and other lymphomas_Male"] <- 4 #was 1 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Non-Hodgkin lymphomas and other lymphomas_Male"] <- 4 #was model #1 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Non-Hodgkin lymphomas and other lymphomas_Male"] <- "Yes"
 
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Neuroblastoma_Male"] <- 2 #was 1 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Neuroblastoma_Male"] <- 2 #was model #1 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Neuroblastoma_Male"] <- "Yes"
 
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Hepatic tumours_Male"] <- 2 #was 3 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Hepatic tumours_Male"] <- 2 #was model #3 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Hepatic tumours_Male"] <- "Yes"
 
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Bone tumours_Male"] <- 6 #was 3 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Bone tumours_Male"] <- 6 #was model #3 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Bone tumours_Male"] <- "Yes"
 
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Germ cell tumours_Male"] <- 5 #was 6 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Germ cell tumours_Male"] <- 5 #was model #6 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Germ cell tumours_Male"] <- "Yes"
 
-RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Other epithelial and unspecified neoplasms_Male"] <- 5 #was 4 prior
+RMSEresults_min_tscv5$modelno[RMSEresults_min_tscv5$group == "Other epithelial and unspecified neoplasms_Male"] <- 5 #was model #4 prior
 RMSEresults_min_tscv5$manualselection[RMSEresults_min_tscv5$group == "Other epithelial and unspecified neoplasms_Male"] <- "Yes"
 
 RMSEresults_min_tscv5 <- left_join(RMSEresults_min_tscv5, RMSEresults_bind_tscv5, by = c("group", "modelno", "id", "converge"))
 
 RMSEresults_min_tscv5 <- RMSEresults_min_tscv5[order(RMSEresults_min_tscv5$id),]
-write.csv(RMSEresults_min_tscv5, "RMSEresults_selectedmodels_50to40_Mar922.csv")
+write.csv(RMSEresults_min_tscv5, "RMSEresults_selectedmodels.csv")
 
 ```
 
@@ -615,64 +618,6 @@ predrates_all_bind <- ldply(plotrates_list, data.frame)
 colnames(predrates_all_bind) <- c("group", "P", "lograte", "logSE", "A", "rate", "SE", "lower", "upper", "status")
 
 write.csv(predrates_all_bind, "GAM_incidence_results.csv")
-
-```
-
-#export plots of plotsums
-```{r}
-
-plotsums_bind <- ldply(plotrates_list, data.frame) #contains all plotrates_all dfs
-colnames(plotsums_bind) <- c("group", "P", "rate", "A", "status", "lograte", "logSE", "SE", "lower", "upper")
-plotsums_bind$id <- rep(1:14, each = nrow(plotrates_list[["ALL_Female"]][["plotrates_all"]]), times = 2)
-
-plotsums_bind$id <- factor(plotsums_bind$id,
-                           levels = c(1:14),
-                           labels = c("ALL", "AML and other leukemias", "Hodgkin lymphomas", "Non-Hodgkin lymphomas and other lymphomas", "Astrocytoma", "Other CNS neoplasms", "Neuroblastoma", "Retinoblastoma", "Renal tumours", "Hepatic tumours", "Bone tumours", "Soft tissue sarcomas", "Germ cell tumours", "Other epithelial and unspecified neoplasms"))
-
-#plotsums_bind_tscv5 <- plotsums_bind #saving a version when running above chunk with tscv5 results (to make combined plots later)
-#plotsums_bind_tscv1 <- plotsums_bind
- 
-plotsums_bind_cancertype <- aggregate(rate ~ P + id + status, data = plotsums_bind, FUN = sum)
-
-#merge with empty df where we can have NA for observed rates in future years - to get plot to run
-P <- rep(1950:2040, each = 14, times = 1)
-emptydf <- as.data.frame(P)
-groupnames <- c("ALL", "AML and other leukemias", "Hodgkin lymphomas", "Non-Hodgkin lymphomas and other lymphomas", "Astrocytoma", "Other CNS neoplasms", "Neuroblastoma", "Retinoblastoma", "Renal tumours", "Hepatic tumours", "Bone tumours", "Soft tissue sarcomas", "Germ cell tumours", "Other epithelial and unspecified neoplasms")
-emptydf$id <- rep(groupnames, each = 1, times = length(1950:2040))
-emptydf$status <- rep("observed")
-emptydf$rate <- rep(NA)
-emptydf <- emptydf %>% filter(P <= 1984 & P >= 2020) #remove 1985-2019 as we have observed data already
-
-plotsums_bind_cancertype_bind <- rbind(plotsums_bind_cancertype, emptydf)
-
-pdf("plotsums_cancertype_tscv5_50to40_Mar922.pdf")
-
-for(i in 1:4){
-  print((ggplot(plotsums_bind_cancertype_bind, aes(x = P, y = rate)) + geom_point(aes(color=status)) + labs(title = "Incidence rates summed for all sexes and ages - by cancer type", subtitle = "Models selected using tsCV with multi-year forecasting", x = "Year", y = "Incidence rate per million") + theme(legend.position = "bottom")) + facet_wrap_paginate(plotsums_bind_cancertype_bind$id, ncol = 2, nrow = 2, page = i))
-}
-
-for(i in 1:4){
-  print((ggplot(plotsums_bind_cancertype_bind, aes(x = P, y = rate)) + geom_point(aes(color=status)) + labs(title = "Incidence rates summed for all sexes and ages - by cancer type. Free Y axis", subtitle = "Models selected using tsCV with multi-year forecasting", x = "Year", y = "Incidence rate per million") + theme(legend.position = "bottom")) + facet_wrap_paginate(plotsums_bind_cancertype_bind$id, ncol = 2, nrow = 2, page = i, scales = "free_y"))
-}
-dev.off()
-
-#######
-plotsums_bind_all <- aggregate(rate ~ P + status, data = plotsums_bind, FUN = sum)
-
-#merge with empty df again
-P <- rep(1950:2040, each = 1, times = 1)
-emptydf <- as.data.frame(P)
-emptydf$status <- rep("observed")
-emptydf$rate <- rep(NA)
-emptydf <- emptydf %>% filter(P <= 1984 & P >= 2020) #remove 1985-2019 as we have observed data already
-
-
-plotsums_bind_all_bind <- rbind(plotsums_bind_all, emptydf)
-
-pdf("plotsums_all_tscv5_50to40_Mar922.pdf")
-print(ggplot(plotsums_bind_all_bind, aes(x = P, y = rate)) + geom_point(aes(color=status)) + labs(title = "Overall incidence rates: summed for all sexes, ages, and cancer types", x = "Year", y = "Incidence rate per million") + theme(legend.position = "bottom"))
-dev.off()
-
 
 ```
 
