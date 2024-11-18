@@ -1,7 +1,7 @@
----
-title: "transprob calc"
-output: html_document
----
+This file processes output from the multi-state parametric survival modeling (outlined in POSIM-Prev/data-raw/multistate_survival_modeling.Rmd)
+
+Output from the current file is then saved for use inside the microsimulation model, to generate transition probabilities for individuals in the model who have a history of childhood cancer (i.e., transitions re: cancer/CRE/death states).
+
 
 ```{r setup, include=FALSE}
 
@@ -13,8 +13,8 @@ if (!require('pacman')) install.packages('pacman'); library(pacman)
 
 p_load("here", "devtools", "dplyr", "scales", "ellipse", "ggplot2", "lazyeval", "igraph", "truncnorm", "ggraph", "reshape2", "knitr", "markdown", "stringr", "demography", "readr", "data.table", "zoo", "flexsurv", "flexsurvcure", "diagram", "mstate")
 
-source('../Functions/model.rmvnorm.R')
-source('../Functions/trans prob function.R')
+source("~/GitHub/POSIM-prev/R/model.rmvnorm.R")
+source("~/GitHub/POSIM-prev/R/trans prob function.R")
 
 ICCCgroups <- c("ALL", "AML and other leukemias", "Astrocytoma", "Bone tumours", "Germ cell tumours", "Hepatic tumours", "Hodgkin lymphomas", "Neuroblastoma", "Non-Hodgkin lymphomas and other lymphomas", "Other CNS neoplasms", "Other epithelial and unspecified neoplasms", "Renal tumours", "Retinoblastoma", "Soft tissue sarcomas")
 
@@ -49,7 +49,7 @@ transition <- c("model_Diagnosis_CRE", "model_Diagnosis_Death", "model_CRE_Death
 v_transition_names <- as.data.frame(transition)
 
 
-#Retinoblastoma - Remove Spline model estimates and replace with LogNormal (second best)
+#Manual selecttion --> Retinoblastoma subgroup - replace Spline model estimates with LogNormal (second best)
 
 l_all_models_by_transition_est <- read.csv("../data_msm_90to19_nocure/l_all_models_by_transition_est.csv")
 MSM_est_RET <- l_all_models_by_transition_est %>% filter(ICCC_regroup == "Retinoblastoma" & transition == "model_Diagnosis_Death" & model == "LogNormal") %>% select(!X & !.id)
@@ -126,7 +126,7 @@ MSM_knots$ICCC_regroup[MSM_knots$ICCC_regroup =="Non-Hodgkin lymphomas and other
 
 # Add Uncertainty to event coefficients ---- model.rmvnorm.f function
 
-n_sim = 100
+n_sim = 500
 
 norm.mat.all <- vector(mode  = "list", length = 14)
 names(norm.mat.all) <- c(ICCCgroups)
@@ -150,7 +150,7 @@ norm.mat.all[[j]] <- norm.mat
 #save for use in microsimulation model. (transition probabilities are calculated at each cycle, informed by the objects below)
 saveRDS(l_MSM_est, "l_MSM_est_90to19_nocure.rds")
 saveRDS(MSM_cov0, "MSM_cov0_90to19_nocure.rds")
-saveRDS(norm.mat.all, "norm.mat.all_90to19_nocure.rds")
+saveRDS(norm.mat.all, "norm.mat.all_90to19_nocure_500.rds")
 
 ```
 
@@ -172,8 +172,7 @@ m_t <- m_t_70to89
 
 #IMPORT AIC/BIC RESULTS
 
-# df_all_AICBIC <- read.csv("../data_msm_70to89_nocure/df_all_AICBIC.csv") #(covariates dxyear, age, sex)
-df_all_models_best <- read.csv("../data_msm_70to89_nocure/df_all_models_best.csv") #(covariates dxyear, age, sex) #calculated within ICES
+df_all_models_best <- read.csv("../data_msm_70to89_nocure/df_all_models_best.csv") #(covariates dxyear, age, sex)
 
 # MSM Estimates
 
@@ -266,7 +265,7 @@ l_MSM_knots[[z]] <- MSM_knots1
 
 # Add Uncertainty to event coefficients ---- model.rmvnorm.f function
 
-n_sim = 100
+n_sim = 500
 
 norm.mat.all <- vector(mode  = "list", length = 14)
 names(norm.mat.all) <- c(ICCCgroups)
@@ -290,7 +289,7 @@ norm.mat.all[[j]] <- norm.mat
 #save for use in microsimulation model (transition probabilities are calculated at each cycle, informed by the objects below)
 saveRDS(l_MSM_est, "l_MSM_est_70to89_nocure.rds")
 saveRDS(MSM_cov0, "MSM_cov0_70to89_nocure.rds")
-saveRDS(norm.mat.all, "norm.mat.all_70to89_nocure.rds")
+saveRDS(norm.mat.all, "norm.mat.all_70to89_nocure_500.rds")
 
 
 ```

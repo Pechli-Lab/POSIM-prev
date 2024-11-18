@@ -1,7 +1,7 @@
 
-# Predict future population of Ontario
+# Predict future population of Ontario, Canada using stochastic population forecasting
 
-# Use of the demography package in R for stochastic population forecasting with coherent components. Based on the papers by Hyndman and Booth (IJF 2008), Hyndman, Booth and Yasmeen (Demography 2013), and the tutorial linked here: https://robjhyndman.com/hyndsight/coherent-population-forecasting/
+# Use of the demography package in R for stochastic population forecasting with coherent components. Based on the papers by Hyndman and Booth (IJF 2008), Hyndman, Booth and Yasmeen (Demography 2013), and the following tutorial: https://robjhyndman.com/hyndsight/coherent-population-forecasting/
 
 
 ```{r setup, include=FALSE}
@@ -20,10 +20,11 @@ p_load("HMDHFDplus", "demography", "dplyr", "tidyr", "ggplot2", "reshape2", "rea
 
 # Load population data
 
-Population data for Ontario is loaded, which contains annual population estimates by age and sex for the years 1971 to 2020 for ages 0-100 and over. "The population growth, which is used to calculate population estimates, is comprised of the natural growth (Tables 17100006 and 17100016), international migration (Table 17100014) and interprovincial migration (Table 17100015)." - StatCan.
+Population data for Ontario is loaded, which contains annual population estimates by age and sex for the years 1971 to 2020 for ages 0-100 and over. 
+"The population growth, which is used to calculate population estimates, is comprised of the natural growth (Tables 17100006 and 17100016), international migration (Table 17100014) and interprovincial migration (Table 17100015)." - StatCan.
 
 ```{r }
-popON <- read.csv("../../Data/Demography data/pop_ON_Oct2021.csv")
+popON <- read.csv("~/GitHub/POSIM-prev/data-raw/Demography data/pop_ON.csv")
 colnames(popON)[1] <- "REF_DATE"
 popON_f <- popON %>% filter(Sex == "Females") %>% select(!Sex) %>% dplyr::rename(Year = REF_DATE, Female = VALUE, Age = Age.group)
 popON_f$Age <- as.numeric(ifelse(substr(popON_f$Age,3,3) =="y", substr(popON_f$Age,1,2),substr(popON_f$Age,1,3)))
@@ -44,7 +45,7 @@ pop_f <- reshape2::dcast(data = pop, Age ~ Year, value.var ="Female" )[,-1]
 StatCan provincial age-specific fertility rates are loaded (fert), available by 5-year age groups between ages 15 and 49 for the years 1991 to 2020. Age-specific fertility rate (ASFR) is the number of live births per 1,000 females in a specific age group
 
 ```{r }
-fert <- read.csv("../../Data/Demography data/fert_ON_Oct2021.csv") #StatCan dataset
+fert <- read.csv("~/GitHub/POSIM-prev/data-raw/Demography data/fert_ON.csv") #StatCan dataset
 colnames(fert) <- c("Age", 1991:2020)
 fert <- fert %>% select(!'2020')
 
@@ -66,10 +67,9 @@ Provincial annual estimates of deaths, by age and sex, are loaded for years 1971
 
 Data for persons aged 90 to 100 years and over is available from 2001/2002.
 ```{r }
-mort <- read.csv("../../Data/Demography data/mort_ON_Oct2021_new.csv")
+mort <- read.csv("~/GitHub/POSIM-prev/data-raw/Demography data/mort_ON.csv")
 
 colnames(mort)<- c("Sex","Age",1971:2020)
-#colnames(mort)<- c("Sex","Age",1972:2021) #as the years are written as 1971/1972 to 2020/2021 this should be specified as 1972-2021?
 mort$Age <- rep(0:100, times = 2) #repeat each age for 2 sexes
 mort <- mort %>% select(!'2020') #remove 2020 column
 

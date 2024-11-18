@@ -1,6 +1,6 @@
-======================================================================
+
   
-  # 2018 Institute for Clinical Evaluative Sciences. All rights reserved.
+  # 2024 Institute for Clinical Evaluative Sciences. All rights reserved.
   
   # TERMS OF USE:
   
@@ -14,11 +14,9 @@
 
 ##Warning.## By receiving this code and data, user accepts these terms, and uses the code and data, solely at its own risk.
 
-======================================================================
 
-##################################################################################
-########### predict 2020-2040: ####################################
-##################################################################################
+################################################################################# #
+
 
 rates_f <- function(data){
   
@@ -42,7 +40,7 @@ rates_f <- function(data){
   return(as.data.frame(observedrates))
 }
 
-#####
+
 Pfr_export_f <- function(data){
   
   a.pt <- seq(0, 14.9, 1/10)
@@ -55,7 +53,7 @@ Pfr_export_f <- function(data){
   return(do.call(rbind,res.list))
   
 }
-#####
+
 ci.pred2 <- function(obj, newdata, Exp = NULL){
   
   zz <- predict(obj, newdata = newdata, se.fit = TRUE, 
@@ -65,7 +63,7 @@ ci.pred2 <- function(obj, newdata, Exp = NULL){
   return(zz)
 }
 
-#####
+
 gammodel_f <- function(data, modelno){
 #Nov2021 results uses:
   # firstyr_ocr <- 1970
@@ -133,14 +131,12 @@ predrates_f <- function(data){
   return(as.data.frame(predrates))
 }
 
-#####
 plotrates_f <- function(data){
   plotrates <- dplyr::bind_rows(observedrates, predrates)
   plotrates$A <- as.factor(plotrates$A)
   return(as.data.frame(plotrates))
 }
 
-#####
 
 plot_f <- function(data){
   #old - from older gam pred functions file #plot <- ggplot(plotrates, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(subtitle = "Projected cancer incidence rates for 2020-2040", x = "Year of diagnosis", y = "Rate per million person-years") + ggtitle(names(res.list[i])) + facet_wrap(plotrates$A) + theme(legend.position = "bottom") #+ scale_y_continuous(breaks = c(min(plotrates$rate), max(plotrates$rate)), labels = scales::number_format(accuracy = 1.0, decimal.mark = '.')) #+ theme(axis.text.y = element_blank())
@@ -148,14 +144,12 @@ plot_f <- function(data){
   return(plot)
 }
 
-#####
 plot_freey_f <- function(data){
   plot_freey <- ggplot(plotrates, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(x = "Year of diagnosis", y = "Rate per million person-years", subtitle = "Projected cancer incidence rates for 2020-2040, free y axes, tsCV using multi-year forecasting") + ggtitle(names(res.list[i])) + facet_wrap(plotrates$A, scales = "free_y") + theme(legend.position = "bottom") + theme(axis.text.y = element_blank()) #+ scale_y_continuous(breaks = c(min(plotrates$rate), max(plotrates$rate)), labels = scales::number_format(accuracy = 0.01, decimal.mark = '.')) + theme(axis.text.y = element_blank())
   #plot_freey <- ggplot(plotrates, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(subtitle = "Projected cancer incidence rates for 2020-2040", x = "Year of diagnosis", y = "Rate per million person-years") + ggtitle(names(res.list[i])) + facet_wrap(plotrates$A, scales = "free_y") + theme(legend.position = "bottom") #+ scale_y_continuous(breaks = c(min(plotrates$rate), max(plotrates$rate)), labels = scales::number_format(accuracy = 0.01, decimal.mark = '.')) #+ theme(axis.text.y = element_blank())
 return(plot_freey)
 }
 
-#####
 
 plot_CI_f <- function(data){
   #plot <- ggplot(plotrates, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(subtitle = "Projected cancer incidence rates for 2020-2040", x = "Year of diagnosis", y = "Rate per million person-years") + ggtitle(names(res.list[i])) + facet_wrap(plotrates$A) + theme(legend.position = "bottom") #+ scale_y_continuous(breaks = c(min(plotrates$rate), max(plotrates$rate)), labels = scales::number_format(accuracy = 1.0, decimal.mark = '.')) #+ theme(axis.text.y = element_blank())
@@ -165,7 +159,6 @@ plot_CI_f <- function(data){
   return(plot_CI)
 }
 
-#####
 
 plot_CI_freey_f <- function(data){
   #plot_freey <- ggplot(plotrates, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(subtitle = "Projected cancer incidence rates for 2020-2040", x = "Year of diagnosis", y = "Rate per million person-years") + ggtitle(names(res.list[i])) + facet_wrap(plotrates$A, scales = "free_y") + theme(legend.position = "bottom") #+ scale_y_continuous(breaks = c(min(plotrates$rate), max(plotrates$rate)), labels = scales::number_format(accuracy = 0.01, decimal.mark = '.')) #+ theme(axis.text.y = element_blank())
@@ -175,9 +168,6 @@ plot_CI_freey_f <- function(data){
   return(plot_CI_freey)
 }
 
-############################################################################################################
-########### Using model to predict all years of observed/predicted data: ####################################
-############################################################################################################
 
 Pfr_export_all_f <- function(data){
   
@@ -192,7 +182,6 @@ Pfr_export_all_f <- function(data){
   return(do.call(rbind,res.list))
 }
 
-#####
 predrates_all_f <- function(data){
 
   rates_all <- as.data.frame(ci.pred2(m1, Pfr_export_all))
@@ -213,7 +202,6 @@ predrates_all_f <- function(data){
   return(as.data.frame(predrates_all))
 }
 
-#####
 plotrates_all_f <- function(data){
   plotrates_all <- dplyr::bind_rows(observedrates, predrates_all)
   plotrates_all$A <- as.factor(plotrates_all$A)
@@ -221,21 +209,18 @@ plotrates_all_f <- function(data){
 }
 
 
-#####
 plot_all_f <- function(data){
   
   plot_all <- ggplot(plotrates_all, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(x = "Year of diagnosis", y = "Rate per million person-years", subtitle = "Projected cancer incidence rates for 1950-2040") + ggtitle(names(res.list[i])) + facet_wrap(plotrates_all$A) + theme(legend.position = "bottom") + theme(axis.text.y = element_blank()) #+ scale_y_continuous(breaks = c(min(plotrates_all$rate), max(plotrates_all$rate)), labels = scales::number_format(accuracy = 1.0, decimal.mark = '.')) #+ theme(axis.text.y = element_blank())
   return(print(plot_all))
 }
 
-#####
 plot_all_freey_f <- function(data){
   
   plot_all_freey <- ggplot(plotrates_all, aes(x=P, y=rate)) + geom_point(aes(color=status)) + labs(x = "Year of diagnosis", y = "Rate per million person-years", subtitle = "Projected cancer incidence rates for 1950-2040, free y axes, tsCV using multi-year forecasting") + ggtitle(names(res.list[i])) + facet_wrap(plotrates_all$A, scales = "free_y") + theme(legend.position = "bottom") + theme(axis.text.y = element_blank()) #+ scale_y_continuous(breaks = c(min(plotrates_all$rate), max(plotrates_all$rate)), labels = scales::number_format(accuracy = 0.01, decimal.mark = '.')) #+ theme(axis.text.y = element_blank())
   return(print(plot_all_freey))
 }
 
-#####
 
 plot_CI_all_f <- function(data){
   
@@ -244,7 +229,6 @@ plot_CI_all_f <- function(data){
   return(print(plot_CI_all))
 }
 
-#####
 
 plot_CI_all_freey_f <- function(data){
   
@@ -252,9 +236,8 @@ plot_CI_all_freey_f <- function(data){
   plot_CI_all_freey <- plot_all_freey + geom_ribbon(aes(ymin=lower, ymax=upper), linetype=2, alpha=0.1)
   return(print(plot_CI_all_freey))
 }
-############################################################################################################
-#################################### Time-series cross-validation - 1 year ahead predictions####################################
-############################################################################################################
+
+#Time-series cross-validation - 1 year ahead predictions
 
 #create training datasets with ids 
 data_tr_f <- function(data){
@@ -298,90 +281,8 @@ rates_tscv_f <- function(data){
 
 }
 
-#####  create the dataframe which indicates what year the prediction will occur for - per each training dataset
-# Pfr_tscv_f <- function(data){
-#   
-#   a.pt_tscv <- seq(0, 14.9, 1/10)
-#   p.predict_tscv <- 1985+((nrow(data)/15)/2) #this predicts 1 year forward (e.g. 1050 rows is up to 2019 data, this line predicts 2020)
-#   
-#   Pfr_tscv <- data.frame(A=a.pt_tscv, P=p.predict_tscv, Y=10^6)
-#   return(Pfr_tscv)
-# 
-# }
 
-###### run MULTIPLE fitted gams for TSCV per each training dataset - predicting 1 years forward
-# gammodels_tscv_f<- function(data){
-#   
-#   lastyr <- 1985+((nrow(data)/15)/2-1)+1
-#   #lastyr <- 1985+((nrow(data)/15)/2-1)
-#   lastyr_pred <- 1985+((nrow(data)/15)/2)
-#   
-#   knots_tscv <- list(x = c(1980, 1984, lastyr, lastyr_pred))
-#   #knots_tscv <- list(x = c(1980, 1985, lastyr, lastyr_pred))
-#   
-#   #wiggliness penalty covers the range of x in observed data. to extend the penalty beyond range of x, pass in set of end points over which knots will be defined by specifying the two extreme end points that enclose region for prediction and two interior knots that cover range of data, plus a little"
-#   
-#   m1 <- gam(N ~ s(A,k=10, bs = "bs", m = c(3,1)) + s(P,k=10, bs = "bs", m = c(3,1)) + offset(log(Y)), family=poisson, data=data, method = "REML", knots = knots_tscv)
-#   #b-splines, cubic splines with 1st derivative penalty (penalises deviations from a flat function)
-#   
-#   m2 <- gam( N ~ s(A,k=10, bs = "bs", m = c(3,2)) + s(P,k=10, bs = "bs", m = c(3,2)) + offset(log(Y)), family=poisson, data=data, method = "REML", knots = knots_tscv)
-#   #b-splines, cubic splines with 2nd derivative penalty (penalising the curvature of the spline) (conventional cubic spline)
-#   
-#   m3 <- gam( N ~ s(A,k=10, bs = "bs", m = c(3,2,1)) + s(P,k=10, bs = "bs", m = c(3,2,1)) + offset(log(Y)), family=poisson, data=data, method = "REML", knots = knots_tscv)
-#   #b-splines, cubic splines with 1st and 2nd derivative penalties
-#   
-#   m4 <- gam(N ~ s(A,k=5, bs = "bs", m = c(3,1)) + s(P,k=5, bs = "bs", m = c(3,1)) + offset(log(Y)), family=poisson, data=data, method = "REML", knots = knots_tscv)
-#   #repeating same spline specification as 3 gams above, but reducing number of knots to 5 and 10
-#   
-#   m5 <- gam( N ~ s(A,k=5, bs = "bs", m = c(3,2)) + s(P,k=5, bs = "bs", m = c(3,2)) + offset(log(Y)), family=poisson, data=data, method = "REML", knots = knots_tscv)
-#   
-#   m6 <- gam( N ~ s(A,k=5, bs = "bs", m = c(3,2,1)) + s(P,k=5, bs = "bs", m = c(3,2,1)) + offset(log(Y)), family=poisson, data=data, method = "REML", knots = knots_tscv)
-#   
-#   p_m1 <- as_tibble(ci.pred2(m1, Pfr_tscv)) %>%
-#     dplyr::rename(fit_k10_31 = lograte, se_k10_31 = logSE)
-#   p_m2 <- as_tibble(ci.pred2(m2, Pfr_tscv)) %>%
-#     dplyr::rename(fit_k10_32 = lograte, se_k10_32 = logSE)
-#   p_m3 <- as_tibble(ci.pred2(m3, Pfr_tscv)) %>%
-#     dplyr::rename(fit_k10_321 = lograte, se_k10_321 = logSE)
-#   p_m4 <- as_tibble(ci.pred2(m4, Pfr_tscv)) %>%
-#     dplyr::rename(fit_k5_31 = lograte, se_k5_31 = logSE)
-#   p_m5 <- as_tibble(ci.pred2(m5, Pfr_tscv)) %>%
-#     dplyr::rename(fit_k5_32 = lograte, se_k5_32 = logSE)
-#   p_m6 <- as_tibble(ci.pred2(m6, Pfr_tscv)) %>%
-#     dplyr::rename(fit_k5_321 = lograte, se_k5_321 = logSE)
-#   
-# crit <- 1.96
-# 
-#   models <- bind_cols(Pfr_tscv, p_m1, p_m2, p_m3, p_m4, p_m5, p_m6) %>% pivot_longer(fit_k10_31:se_k5_321, names_sep = '_', names_to = c('variable', 'spline', 'penalty')) %>% 
-#     pivot_wider(names_from = variable, values_from = value) %>% dplyr::rename(lograte = fit, logSE = se) %>% 
-#       mutate(rate = exp(lograte), SE = exp(logSE), lwr_ci = exp(lograte - (crit * logSE)), upr_ci = exp(lograte + (crit * logSE)))
-#   
-#   models$age <- rep(seq(0,14), each = 60, times = 1)
-#   
-#   models <- models %>% group_by(age, P, spline, penalty) %>% arrange(desc(rate)) %>% slice(5) %>% ungroup()
-#   models <- models[c(-3)]
-#   models$status2 <- rep("tsCV predicted", times = nrow(models))
-#   
-#   AIC <- c(m1$aic, m2$aic, m3$aic, m4$aic, m5$aic, m6$aic)
-#   AIC <- round(AIC,3)
-#   AIC <- as.data.frame(AIC)
-#   AIC$modelno <- c(1,2,3,4,5,6)
-#   
-#   df_m1 <- filter(models, spline == "k10" & penalty == "31")
-#   df_m2 <- filter(models, spline == "k10" & penalty == "32")
-#   df_m3 <- filter(models, spline == "k10" & penalty == "321")
-#   df_m4 <- filter(models, spline == "k5" & penalty == "31")
-#   df_m5 <- filter(models, spline == "k5" & penalty == "32")
-#   df_m6 <- filter(models, spline == "k5" & penalty == "321")
-#   
-#   df_models <- list(df_m1, df_m2, df_m3, df_m4, df_m5, df_m6, AIC)
-#   return(df_models)
-# }
-
-#####
-############################################################################################################
-#################################### Time-series cross-validation - 5 years ahead predictions####################################
-############################################################################################################
+#Time-series cross-validation - 5 years ahead predictions
 
 Pfr_tscv5_f <- function(data){
   
@@ -401,8 +302,8 @@ Pfr_tscv5_f <- function(data){
   return(Pfr_tscv5)
   
 }
-#####
-###### run MULTIPLE fitted gams for TSCV per each training dataset - predicting 5 years forward
+
+#run MULTIPLE fitted gams for TSCV per each training dataset - predicting 5 years forward
 gammodels_tscv5_f<- function(data){
   #used for Nov2021 results - predicting 1970-2040 using 1985-2019 data
   # firstyr_ocr <- 1970
@@ -483,8 +384,8 @@ gammodels_tscv5_f<- function(data){
   return(df_models_tscv5)
 }
 
-############ run all 6 gam models and predict - to plot and compare all 6 models' predictions
-######
+#run all 6 gam models and predict - to plot and compare all 6 models' predictions
+
 gammodels_all_f<- function(data){
   #Nov2021
   # firstyr_ocr <- 1970 #hide when predicting 1985 onward
