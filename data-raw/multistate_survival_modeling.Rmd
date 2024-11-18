@@ -1,11 +1,18 @@
----
-title: "MSM_all models_70to89"
-output: html_document
----
+
+This file conducts multi-state parametric survival modeling to examine survival after childhood cancer diagnosis.
+
+This coding process was applied to two separate cohorts: 
+1) children diagnosed with cancer between *1970-1989*, captured in the Ontario Cancer Registry (individual-level data held at ICES)
+2) children diagnosed with cancer between *1990-2019*, captured in the Pediatric Oncology Group of Ontario Networked Information System (individual-level data held at ICES).
+
+Note:
+- Information on subsequent cancer-related events (dates of recorded relapses, progressive disease events, and second malignant neoplasms) was available in POGONIS, for individuals who were first diagnosed in 1990 or later. Thus, the time between diagnosis/CRE/death was modeled for this population.
+- For individuals identified in OCR (i.e., diagnosed earlier than 1990), no CRE event data was available. The same coding framework for multi-state modeling was used, but as no CRE events occurred, only the time from diagnosis to death was modeled in this population.
+
 
 ======================================================================
 
-# 2018 Institute for Clinical Evaluative Sciences. All rights reserved.
+# 2024 Institute for Clinical Evaluative Sciences. All rights reserved.
 
 # TERMS OF USE:
 
@@ -21,13 +28,6 @@ output: html_document
 
 ======================================================================
 
----
-
-This file runs multi-state parametric survival models to examine survival after childhood cancer diagnosis.
-
-This coding process was applied to two separate cohorts: 1) children diagnosed with cancer between *1970-1989*, captured in the Ontario Cancer Registry (data held at ICES); and 2) children diagnosed with cancer between *1990-2019*, captured in the Pediatric Oncology Group of Ontario Networked Information System (data held at ICES).
-
-One line (line 104) requires manual selection, depending on the years of data available for analysis.
 
 # 01 Load packages
 
@@ -101,7 +101,9 @@ status <- MSMdata %>% select(Progressionfree, Progression, Death) %>% dplyr::ren
 
 MSMdata <- MSMdata %>% dplyr::rename(Diagnosis_s = Progressionfree, CRE_s = Progression, Death_s = Death, CRE = Progression_time, Death = Death_time, id = ID)
 
-MSMdata$dxyear <- MSMdata$dxyear - 1969 #This line was run when analyzing survival for patients diagnosed between 1970-1989 (Subtracting by 1 to have dxyear of 1970 == 1, 1971 == 2, ...). When analyzing survival for patients diagnosed between 1990-2019, MSMdata$dxyear - 1989 was applied.
+MSMdata$dxyear <- MSMdata$dxyear - 1969 #manual selection required here
+#This line was run when analyzing survival for patients diagnosed between 1970-1989 (Subtracting by 1 to have dxyear of 1970 == 1, 1971 == 2, ...). 
+#When analyzing survival for patients diagnosed between 1990-2019, MSMdata$dxyear - 1989 was applied.
 
 #Multistate Modeling (MSM)
 ## Read in MSM datasets
